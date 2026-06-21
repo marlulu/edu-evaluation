@@ -1,0 +1,34 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: edu-evaluation-backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/edu_evaluation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: edu
+    password: edu_password
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: edu
+    password: edu_password
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  storage:
+    endpoint: http://localhost:9000
+    bucket: coursework-submissions
+    access-key: minio
+    secret-key: minio_password
+  ai-worker:
+    base-url: http://localhost:8001

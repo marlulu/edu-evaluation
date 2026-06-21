@@ -1,0 +1,40 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local AI/Trellis workspace metadata
+.agents/
+.codex/
+.trellis/
+AGENTS.md
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Backend
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+.m2/
+
+# Python
+ai-worker/.venv/
+**/__pycache__/
+*.py[cod]
+ai-worker/.pytest_cache/
+
+# Runtime logs
+*.log
+
+# Local infrastructure data
+infra/data/
+
+# Environment files
+.env
+*.local
