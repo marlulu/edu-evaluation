@@ -32,6 +32,22 @@
 - `ai-worker/` 负责后续文件抽取、OCR/ASR、视频处理和模型评价任务。
 - `infra/` 负责本地 MySQL、Redis、MinIO、RabbitMQ 等依赖服务。
 
+### 2.1 基础模块位置
+
+当前系统先固定 5 个基础模块位置，详细业务内容后续按模块单独讨论。完整映射见 `docs/MODULE_MAP.md`。
+
+| 模块 | 前端位置 | 后端位置 | AI Worker 位置 |
+| --- | --- | --- | --- |
+| 作业管理模块 | `frontend/src/features/assignment-management/` | `com.example.eduevaluation.assignment` | N/A |
+| 多模态内容解析模块 | `frontend/src/features/content-parsing/` | `com.example.eduevaluation.content` | `ai-worker/app/modules/content_parsing/` |
+| 智能评价模块 | `frontend/src/features/intelligent-evaluation/` | `com.example.eduevaluation.evaluation` | `ai-worker/app/modules/intelligent_evaluation/` |
+| 结果展示与反馈模块 | `frontend/src/features/result-feedback/` | `com.example.eduevaluation.result` | N/A |
+| 系统管理与配置模块 | `frontend/src/features/system-admin/` | `com.example.eduevaluation.system` | `ai-worker/app/modules/system_config/` |
+
+后续新增模块时，先在模块地图中登记稳定英文目录名，再分别补充前端 feature、后端业务包，以及必要的 AI Worker 处理包。
+
+多模态内容解析模块的详细需求已单独整理到 `docs/MULTIMODAL_CONTENT_PARSING.md`，用于后续 AI 解析阶段实现前的设计收敛。
+
 ## 3. 技术栈
 
 ### 3.1 前端
@@ -62,6 +78,44 @@
 
 后端当前提供 `/api/health` 健康接口，并预留 MySQL、Redis、RabbitMQ、MinIO 和 AI Worker 的配置项。
 
+作业管理模块当前提供非 AI 的可运行 MVP，接口前缀为 `/api/assignment-management`：
+
+- `/assignments`：作业增删改查、状态跟踪、版本列表。
+- `/assignments/{id}/versions`：学生上传作业文件并生成新版本。
+- `/assignments/import` 与 `/assignments/export`：CSV 批量导入导出。
+- `/categories`：作业分类管理。
+- `/students` 与 `/classes`：学生信息和班级管理。
+
+当前版本使用内存保存元数据，上传文件写入 `backend/data/uploads/`。该目录已被 Git 忽略。后续接入持久化时，应将元数据迁移到 MySQL，将原始文件迁移到 MinIO。
+
+系统管理与配置模块当前提供非 AI 的可运行 MVP，接口前缀为 `/api/system-admin`：
+
+- `/users`：教师、助教、学生、管理员等多角色用户管理，支持新增、编辑、停用、角色授权、功能权限和数据权限调整。
+- `/rubric-templates`：评价指标体系模板管理，支持维度、权重、评分细则、适用课程、启停、复制、修改、版本历史。
+- `/audit-logs` 与 `/audit-logs/export`：关键操作日志检索与 CSV 导出。
+- `/backups` 与 `/backups/{id}/restore`：备份记录创建、恢复操作记录和审计留痕。
+
+当前版本使用内存保存系统管理数据。后续接入持久化时，评分结果应保存所使用的模板 ID 与版本号，以保证结果和当时指标体系一一对应。
+
+结果展示与反馈模块当前提供非 AI 的可运行 MVP，接口前缀为 `/api/results`：
+
+- `/reports`：生成和读取详细评价报告。
+- `/reports/{id}/feedback`：追加复核或反馈意见。
+- `/reports/{id}/resubmit`：学生根据反馈再次提交作业，并将新版本与上一轮评价关联。
+- `/history`：按学生查询历次评价记录。
+- `/comparison`：按作业查询同批次横向对比。
+- `/export/excel`：批量导出结果汇总，当前为 Excel 兼容 CSV。
+- `/reports/{id}/pdf`：导出单份评价报告 PDF。
+
+前端当前提供：
+
+- 维度均分柱状图与单份作业雷达图。
+- 单个学生评价报告详情、优劣势分析和修改建议。
+- 历史记录查询与班级横向对比。
+- 反馈追加和再次提交入口，用于形成“评价—修改—再评价”的闭环记录。
+
+当前版本使用内存保存评价结果、反馈记录和比较数据。后续接入持久化时，应将评价报告与具体作业版本、评价模板版本、修改记录和复核记录建立稳定外键关系。
+
 ### 3.3 AI Worker
 
 - Python `3.11+` 推荐
@@ -71,6 +125,17 @@
 - python-dotenv
 
 AI Worker 当前提供 `/health` 健康接口。后续用于文件内容抽取、音视频转写、图像帧抽取、OCR 和 LLM 评价。
+
+多模态内容解析模块当前仍处于设计阶段，目标范围包括：
+
+- 图片内容识别、OCR、构图特征、清晰度和色彩分析
+- 视频元数据、关键帧、镜头切分、字幕识别、主题识别
+- 音频转写、语速、音量、清晰度、停顿节奏和表达辅助分析
+- 文本、字幕、脚本、说明文档等附属材料解析
+- 压缩包自动解包、目录识别、文件分类
+- 图片、视频、音频、文本之间的联合关联分析
+
+具体能力边界、建议目录结构和后续设计切分见 `docs/MULTIMODAL_CONTENT_PARSING.md`。
 
 ### 3.4 基础设施
 
