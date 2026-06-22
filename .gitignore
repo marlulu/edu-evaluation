@@ -32,6 +32,7 @@ ai-worker/.pytest_cache/
 
 # Runtime logs
 *.log
+img*.png
 
 # Local infrastructure data
 infra/data/
