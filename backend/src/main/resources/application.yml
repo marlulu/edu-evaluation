@@ -32,3 +32,10 @@ app:
     secret-key: minio_password
   ai-worker:
     base-url: http://localhost:8001
+    capabilities-path: /parse/capabilities
+    parse-task-path: /parse/tasks
+    provider-registry-path: /parse/providers
+    evaluation-capabilities-path: /evaluate/capabilities
+    evaluation-task-path: /evaluate/tasks
+    evaluation-review-path: /evaluate/reviews
+    timeout-seconds: 60

@@ -21,6 +21,7 @@ frontend/vite.config.d.ts
 # Backend
 backend/target/
 backend/.mvn/wrapper/maven-wrapper.jar
+backend/data/
 .m2/
 
 # Python
