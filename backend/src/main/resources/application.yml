@@ -5,9 +5,17 @@ spring:
   application:
     name: edu-evaluation-backend
   datasource:
-    url: jdbc:mysql://localhost:3306/edu_evaluation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:13306/edu_evaluation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: edu
     password: edu_password
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
   data:
     redis:
       host: localhost
@@ -17,6 +25,10 @@ spring:
     port: 5672
     username: edu
     password: edu_password
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
 
 management:
   endpoints:
@@ -25,17 +37,19 @@ management:
         include: health,info
 
 app:
+  upload-dir: data/uploads
   storage:
     endpoint: http://localhost:9000
     bucket: coursework-submissions
     access-key: minio
     secret-key: minio_password
   ai-worker:
-    base-url: http://localhost:8001
+    base-url: http://localhost:8000
     capabilities-path: /parse/capabilities
     parse-task-path: /parse/tasks
     provider-registry-path: /parse/providers
     evaluation-capabilities-path: /evaluate/capabilities
     evaluation-task-path: /evaluate/tasks
     evaluation-review-path: /evaluate/reviews
-    timeout-seconds: 60
+    timeout-seconds: 120
+    connect-timeout-seconds: 10

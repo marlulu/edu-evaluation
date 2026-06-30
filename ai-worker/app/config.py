@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+# Load .env file from project root
+_env_path = Path(__file__).parent.parent / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
 
 
 class WorkerSettings(BaseModel):
@@ -31,6 +38,13 @@ class WorkerSettings(BaseModel):
     parse_artifact_base_path: str = "data/parsing-artifacts"
     archive_extract_base_path: str = "data/archive-work"
 
+    # MinIO 配置
+    minio_endpoint: str | None = None
+    minio_access_key: str | None = None
+    minio_secret_key: str | None = None
+    minio_bucket: str = "coursework-submissions"
+    minio_secure: bool = False
+
     @property
     def has_model_gateway(self) -> bool:
         return bool(self.model_api_base_url)
@@ -50,6 +64,11 @@ def _env(name: str, default: str | None = None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def reload_settings() -> None:
+    """Clear the settings cache so next get_settings() reads fresh env vars."""
+    get_settings.cache_clear()
 
 
 @lru_cache(maxsize=1)
@@ -86,6 +105,11 @@ def get_settings() -> WorkerSettings:
             "data/archive-work",
         )
         or "data/archive-work",
+        minio_endpoint=_env("MINIO_ENDPOINT"),
+        minio_access_key=_env("MINIO_ACCESS_KEY"),
+        minio_secret_key=_env("MINIO_SECRET_KEY"),
+        minio_bucket=_env("MINIO_BUCKET", "coursework-submissions") or "coursework-submissions",
+        minio_secure=_env("MINIO_SECURE", "false").lower() == "true" if _env("MINIO_SECURE") else False,
     )
 
 

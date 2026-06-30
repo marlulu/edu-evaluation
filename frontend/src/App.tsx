@@ -1,34 +1,26 @@
 import {
   BookOutlined,
-  CheckSquareOutlined,
-  FileDoneOutlined,
   LogoutOutlined,
-  SettingOutlined,
-  UserOutlined
+  UserOutlined,
+  VideoCameraOutlined
 } from '@ant-design/icons';
 import { Avatar, Button, Card, Layout, Menu, Space, Tag, Typography, message } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { AssignmentManagement } from './features/assignment-management/AssignmentManagement';
 import { LoginPage, type LoginProfile, type UserRole } from './features/auth/LoginPage';
-import { IntelligentEvaluation } from './features/intelligent-evaluation/IntelligentEvaluation';
-import { ResultFeedback } from './features/result-feedback/ResultFeedback';
-import { StudentWorkspace } from './features/student-workspace/StudentWorkspace';
-import { SystemAdmin } from './features/system-admin/SystemAdmin';
+import { VideoAnalysis } from './features/video-analysis/VideoAnalysis';
 
 const { Header, Sider, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
 
 type SessionUser = LoginProfile;
-type ModuleKey = 'dashboard' | 'assignment' | 'evaluation' | 'results' | 'system' | 'student';
+type ModuleKey = 'dashboard' | 'video';
 
 const SESSION_KEY = 'edu-evaluation-session';
 
 const profiles: LoginProfile[] = [
   { username: 'admin', password: 'admin123', displayName: '系统管理员', role: 'ADMIN' },
   { username: 'teacher01', password: 'teacher123', displayName: '课程教师', role: 'TEACHER' },
-  { username: 'assistant01', password: 'assistant123', displayName: '课程助教', role: 'ASSISTANT' },
-  { username: 'S2026001', password: 'student123', displayName: '示例学生', role: 'STUDENT', studentNo: 'S2026001' }
 ];
 
 const roleLabel: Record<UserRole, string> = {
@@ -39,10 +31,10 @@ const roleLabel: Record<UserRole, string> = {
 };
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
-  ADMIN: ['dashboard', 'assignment', 'evaluation', 'results', 'system'],
-  TEACHER: ['dashboard', 'assignment', 'evaluation', 'results'],
-  ASSISTANT: ['dashboard', 'evaluation', 'results'],
-  STUDENT: ['dashboard', 'student']
+  ADMIN: ['dashboard', 'video'],
+  TEACHER: ['dashboard', 'video'],
+  ASSISTANT: ['dashboard'],
+  STUDENT: ['dashboard']
 };
 
 const moduleMeta: Record<
@@ -50,11 +42,7 @@ const moduleMeta: Record<
   { label: string; icon: ReactNode; description: string }
 > = {
   dashboard: { label: '工作台', icon: <BookOutlined />, description: '查看当前角色下的工作入口和模块概览。' },
-  assignment: { label: '作业管理', icon: <FileDoneOutlined />, description: '维护作业、版本、分类、班级和学生信息。' },
-  evaluation: { label: '智能评价', icon: <CheckSquareOutlined />, description: '创建自动评分任务并记录人工复核。' },
-  results: { label: '结果反馈', icon: <FileDoneOutlined />, description: '查看评价报告、历史记录和反馈闭环。' },
-  system: { label: '系统配置', icon: <SettingOutlined />, description: '管理用户权限、评价模板、审计日志和备份。' },
-  student: { label: '我的反馈', icon: <UserOutlined />, description: '学生查看自己的作业和评价反馈。' }
+  video: { label: '视频分析', icon: <VideoCameraOutlined />, description: '上传视频进行元数据提取、语音识别、内容分析和评判标准评分。' }
 };
 
 export default function App() {
@@ -130,11 +118,11 @@ export default function App() {
       <Layout className="shell-layout">
         <Sider width={248} theme="light" className="shell-sider">
           <div className="brand-block">
-            <Tag color="processing">AI Coursework</Tag>
+            <Tag color="processing">AI Video</Tag>
             <Title level={4} className="brand-title">
-              作业评价系统
+              视频分析系统
             </Title>
-            <Text type="secondary">按角色显示对应模块和操作入口</Text>
+            <Text type="secondary">上传视频进行智能分析</Text>
           </div>
           <Menu
             mode="inline"
@@ -173,11 +161,7 @@ export default function App() {
             {activeModule === 'dashboard' && (
               <Dashboard user={sessionUser} visibleModules={visibleModules} onSelect={setActiveModule} />
             )}
-            {activeModule === 'assignment' && <AssignmentManagement />}
-            {activeModule === 'evaluation' && <IntelligentEvaluation />}
-            {activeModule === 'results' && <ResultFeedback />}
-            {activeModule === 'system' && <SystemAdmin />}
-            {activeModule === 'student' && <StudentWorkspace username={sessionUser.username} />}
+            {activeModule === 'video' && <VideoAnalysis />}
           </Content>
         </Layout>
       </Layout>
@@ -203,7 +187,7 @@ function Dashboard({
             {user.displayName}，欢迎进入工作台
           </Title>
           <Paragraph type="secondary" className="detail-paragraph">
-            当前界面只展示你需要使用的模块。作业管理、智能评价、结果反馈和系统配置按照常见后台排版整合在统一导航中。
+            本系统专注于视频智能分析，支持视频上传、元数据提取、语音识别、内容分析和质量评估。
           </Paragraph>
         </Space>
       </Card>
