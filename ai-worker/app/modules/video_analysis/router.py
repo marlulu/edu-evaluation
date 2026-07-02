@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 
 from app.config import WorkerSettings, get_settings
 from app.modules.video_analysis.handler import video_manager
@@ -39,7 +42,6 @@ async def analyze_video(
         "taskId": "task_id",
         "fileName": "file_name",
         "filePath": "file_path",
-        "videoType": "video_type",
         "callbackUrl": "callback_url",
         "criteriaText": "criteria_text",
     }
@@ -101,7 +103,6 @@ async def analyze_video_async(
         "taskId": "task_id",
         "fileName": "file_name",
         "filePath": "file_path",
-        "videoType": "video_type",
         "callbackUrl": "callback_url",
         "criteriaText": "criteria_text",
     }
@@ -213,6 +214,40 @@ async def get_capabilities() -> dict[str, Any]:
                 "stability": True,
             },
         },
+    }
+
+
+@router.post("/parse-criteria")
+async def parse_criteria(request: dict[str, Any]) -> dict[str, Any]:
+    """解析评判标准文件
+
+    支持的格式：PDF, Word (.docx), 文本 (.txt)
+    返回解析后的文本内容
+    """
+    file_path = request.get("filePath") or request.get("file_path")
+    if not file_path:
+        raise HTTPException(status_code=400, detail="缺少文件路径参数")
+
+    import os
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=400, detail=f"文件不存在: {file_path}")
+
+    from .criteria import parse_criteria_file as do_parse
+    try:
+        text = do_parse(file_path)
+        logger.info("Parsed criteria file %s, text length: %d", file_path, len(text) if text else 0)
+    except Exception as e:
+        logger.error("Failed to parse criteria file %s: %s", file_path, e)
+        raise HTTPException(status_code=500, detail=f"解析失败: {str(e)}")
+
+    if not text:
+        logger.warning("Parsed criteria file %s but got empty text", file_path)
+        raise HTTPException(status_code=400, detail="无法解析文件内容")
+
+    return {
+        "success": True,
+        "text": text,
+        "filePath": file_path,
     }
 
 

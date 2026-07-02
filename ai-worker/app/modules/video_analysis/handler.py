@@ -30,8 +30,10 @@ from .schemas import (
     AudioGuidanceResult,
     AudioSegment,
     ContentAnalysis,
+    EvaluationResult,
     GuidanceContent,
     KeyframeInfo,
+    ScoreItem,
     TechnicalQuality,
     VideoAnalysisOptions,
     VideoAnalysisProgress,
@@ -44,6 +46,7 @@ from .transcriber import (
     TranscriptionResult,
     transcribe_with_whisper_api,
     transcribe_with_local_whisper,
+    transcribe_with_faster_whisper,
     build_speech_analysis,
 )
 
@@ -187,17 +190,20 @@ class VideoAnalyzer:
                 audio_features = analyze_audio(audio_path, metadata.duration)
 
                 # 语音转录
-                if self.settings.model_api_key and self.settings.model_api_base_url:
-                    update_progress(VideoTaskStatus.TRANSCRIBING, 55, "语音转录")
-                    transcription = transcribe_with_whisper_api(
-                        audio_path,
-                        self.settings.model_api_key,
-                        self.settings.model_api_base_url,
-                    )
-
-                    if not transcription:
-                        # 尝试本地 Whisper
-                        transcription = transcribe_with_local_whisper(audio_path)
+                update_progress(VideoTaskStatus.TRANSCRIBING, 55, "语音转录")
+                # 优先使用本地 Whisper（已有缓存模型）
+                transcription = transcribe_with_local_whisper(audio_path)
+                if not transcription:
+                    # 尝试 faster-whisper
+                    transcription = transcribe_with_faster_whisper(audio_path)
+                if not transcription:
+                    # 尝试 Whisper API
+                    if self.settings.model_api_key and self.settings.model_api_base_url:
+                        transcription = transcribe_with_whisper_api(
+                            audio_path,
+                            self.settings.model_api_key,
+                            self.settings.model_api_base_url,
+                        )
 
                 # 构建音频分析结果
                 if transcription:
@@ -257,8 +263,9 @@ class VideoAnalyzer:
                     transcription,
                     keyframes,
                     scene_description,
-                    request.video_type or "work",
                 )
+
+                logger.info("AI analysis text length: %d chars", len(ai_analysis_text) if ai_analysis_text else 0)
 
                 result.content_analysis = ContentAnalysis(
                     overall_topic="视频分析",
@@ -267,24 +274,49 @@ class VideoAnalyzer:
                     keywords=[],
                 )
 
-            # 7. 评判标准评分
-            if self.text_provider and ai_analysis_text and request.criteria_text:
+            # 7. 评判标准评分（上传文件优先，否则使用默认标准）
+            if self.text_provider and ai_analysis_text:
                 update_progress(VideoTaskStatus.ANALYZING_CONTENT, 90, "评判标准评分")
 
                 client = self.text_provider.create_client()
                 model = self.settings.text_model_name or "gpt-5.5"
 
-                criteria_text = request.criteria_text
-                if not criteria_text:
-                    criteria_text = get_default_criteria(request.video_type or "work")
+                criteria_text = request.criteria_text or get_default_criteria()
+                logger.info("Using criteria: %s", "uploaded file" if request.criteria_text else "default")
 
-                evaluation = evaluate_with_criteria(
+                evaluation_data = evaluate_with_criteria(
                     client,
                     model,
                     ai_analysis_text,
                     criteria_text,
-                    request.video_type or "work",
                 )
+
+                # 将评分结果存入 content_analysis.evaluation
+                if result.content_analysis and isinstance(evaluation_data, dict):
+                    try:
+                        result.content_analysis.evaluation = EvaluationResult(
+                            total_score=evaluation_data.get("total_score", 0),
+                            grade=evaluation_data.get("grade", ""),
+                            scores=[
+                                ScoreItem(
+                                    dimension=s.get("dimension", ""),
+                                    max_score=s.get("max_score", 0),
+                                    score=s.get("score", 0),
+                                    evidence=s.get("evidence", ""),
+                                    suggestion=s.get("suggestion", ""),
+                                )
+                                for s in evaluation_data.get("scores", [])
+                            ],
+                            strengths=evaluation_data.get("strengths", []),
+                            weaknesses=evaluation_data.get("weaknesses", []),
+                            priority_suggestions=evaluation_data.get("priority_suggestions", []),
+                            criteria_text=evaluation_data.get("criteria_text", criteria_text),
+                        )
+                        logger.info("Evaluation stored: total_score=%.1f, grade=%s",
+                                    result.content_analysis.evaluation.total_score,
+                                    result.content_analysis.evaluation.grade)
+                    except Exception as e:
+                        logger.error("Failed to store evaluation result: %s", e)
 
             # 8. 技术质量评估
             result.technical_quality = self._assess_technical_quality(metadata, audio_features)

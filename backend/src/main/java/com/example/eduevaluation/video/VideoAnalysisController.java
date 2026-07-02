@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/video")
@@ -77,6 +78,50 @@ public class VideoAnalysisController {
             "filePath", filePath.toAbsolutePath().toString().replace("\\", "/"),
             "fileSize", file.getSize()
         );
+    }
+
+    // ====== 评判标准文件上传 ======
+
+    @PostMapping("/upload-criteria")
+    public Map<String, Object> uploadCriteria(@RequestParam("file") MultipartFile file) throws IOException {
+        if (file.isEmpty()) {
+            return Map.of("success", false, "message", "文件为空");
+        }
+
+        // 验证文件类型
+        String originalName = file.getOriginalFilename();
+        String ext = originalName != null ? originalName.substring(originalName.lastIndexOf(".")).toLowerCase() : "";
+        String[] allowedExts = {".pdf", ".docx", ".doc", ".txt"};
+        boolean allowed = false;
+        for (String e : allowedExts) {
+            if (e.equals(ext)) { allowed = true; break; }
+        }
+        if (!allowed) {
+            return Map.of("success", false, "message", "不支持的文件格式: " + ext);
+        }
+
+        // 保存文件
+        String fileName = UUID.randomUUID() + ext;
+        Path uploadPath = Paths.get(uploadDir, "criteria");
+        Files.createDirectories(uploadPath);
+        Path filePath = uploadPath.resolve(fileName);
+        try (InputStream inputStream = file.getInputStream()) {
+            Files.copy(inputStream, filePath, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        return Map.of(
+            "success", true,
+            "fileName", originalName,
+            "filePath", filePath.toAbsolutePath().toString().replace("\\", "/"),
+            "fileSize", file.getSize()
+        );
+    }
+
+    // ====== 评判标准文件解析（转发到 AI Worker）=====
+
+    @PostMapping("/parse-criteria")
+    public ResponseEntity<Map> parseCriteria(@RequestBody Map<String, Object> request) {
+        return forwardPost("/video/parse-criteria", request);
     }
 
     // ====== 视频分析（转发到 AI Worker + MySQL 持久化）=====
@@ -146,16 +191,16 @@ public class VideoAnalysisController {
 
     @GetMapping("/tasks")
     public ResponseEntity<Map> listTasks() {
-        // 从 MySQL 查询任务列表
-        List<VideoTaskEntity> entities = taskService.listTasks();
+        // 从 MySQL 查询任务摘要列表（不加载大字段）
+        List<VideoTaskSummary> summaries = taskService.listTaskSummaries();
         List<Map<String, Object>> tasks = new ArrayList<>();
 
-        for (VideoTaskEntity entity : entities) {
+        for (VideoTaskSummary summary : summaries) {
             // 对于处理中的任务，从 AI Worker 获取最新状态
-            if (!"completed".equals(entity.getStatus()) && !"failed".equals(entity.getStatus())) {
+            if (!"completed".equals(summary.getStatus()) && !"failed".equals(summary.getStatus())) {
                 try {
                     ResponseEntity<Map> response = restTemplate.getForEntity(
-                        aiWorkerBaseUrl + "/video/tasks/" + entity.getTaskId(),
+                        aiWorkerBaseUrl + "/video/tasks/" + summary.getTaskId(),
                         Map.class
                     );
                     Map<String, Object> aiTask = response.getBody();
@@ -164,32 +209,37 @@ public class VideoAnalysisController {
                         double progress = aiTask.get("progress") != null ? ((Number) aiTask.get("progress")).doubleValue() : 0;
 
                         // 更新 MySQL
-                        taskService.updateProgress(entity.getTaskId(), status, progress);
+                        taskService.updateProgress(summary.getTaskId(), status, progress);
 
                         // 如果完成，保存完整结果
                         if ("completed".equals(status) || "failed".equals(status)) {
                             try {
                                 String resultJson = objectMapper.writeValueAsString(aiTask);
-                                taskService.saveTask(entity.getTaskId(), entity.getFileName(), status, progress, resultJson);
+                                taskService.saveTask(summary.getTaskId(), summary.getFileName(), status, progress, resultJson);
                             } catch (Exception e) {
                                 log.error("Failed to serialize task result", e);
                             }
                         }
 
                         tasks.add(Map.of(
-                            "taskId", entity.getTaskId(),
-                            "fileName", entity.getFileName(),
+                            "taskId", summary.getTaskId(),
+                            "fileName", summary.getFileName(),
                             "status", status,
                             "progress", progress
                         ));
                         continue;
                     }
                 } catch (Exception e) {
-                    log.warn("Failed to get task {} from AI Worker", entity.getTaskId(), e);
+                    log.warn("Failed to get task {} from AI Worker", summary.getTaskId(), e);
                 }
             }
 
-            tasks.add(taskService.toSummaryMap(entity));
+            tasks.add(Map.of(
+                "taskId", summary.getTaskId(),
+                "fileName", summary.getFileName(),
+                "status", summary.getStatus(),
+                "progress", summary.getProgress()
+            ));
         }
 
         return ResponseEntity.ok(Map.of("total", tasks.size(), "tasks", tasks));

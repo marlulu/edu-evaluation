@@ -62,6 +62,10 @@ public class VideoTaskService {
         return repository.findAllByOrderByCreatedAtDesc();
     }
 
+    public List<VideoTaskSummary> listTaskSummaries() {
+        return repository.findSummaryByOrderByCreatedAtDesc();
+    }
+
     @Transactional
     public boolean deleteTask(String taskId) {
         if (repository.existsById(taskId)) {

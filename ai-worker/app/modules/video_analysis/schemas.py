@@ -101,6 +101,26 @@ class VideoScene(BaseModel):
     scene_type: str | None = None  # "presentation" | "demo" | "talking_head" etc.
 
 
+class ScoreItem(BaseModel):
+    """单个维度的评分结果"""
+    dimension: str         # 维度名称
+    max_score: float       # 满分
+    score: float           # 得分
+    evidence: str = ""     # 评分依据
+    suggestion: str = ""   # 改进建议
+
+
+class EvaluationResult(BaseModel):
+    """完整评估结果"""
+    total_score: float                         # 总分（0-100）
+    grade: str = ""                            # 等级（优秀/良好/合格/不合格）
+    scores: list[ScoreItem] = []               # 各维度得分
+    strengths: list[str] = []                  # 优点
+    weaknesses: list[str] = []                 # 不足
+    priority_suggestions: list[str] = []       # 优先改进建议
+    criteria_text: str = ""                    # 使用的评分标准原文
+
+
 class ContentAnalysis(BaseModel):
     """内容分析结果"""
     overall_topic: str
@@ -108,6 +128,7 @@ class ContentAnalysis(BaseModel):
     key_points: list[str]
     scenes: list[VideoScene] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    evaluation: EvaluationResult | None = None  # 基于评分标准的打分结果
 
 
 class TechnicalQuality(BaseModel):
@@ -155,7 +176,6 @@ class VideoAnalysisRequest(BaseModel):
     file_path: str
     options: VideoAnalysisOptions = Field(default_factory=VideoAnalysisOptions)
     callback_url: str | None = None
-    video_type: str | None = None
     criteria_text: str | None = None
 
     model_config = {"populate_by_name": True}
@@ -168,7 +188,6 @@ class VideoAnalysisRequest(BaseModel):
                 "taskId": "task_id",
                 "fileName": "file_name",
                 "filePath": "file_path",
-                "videoType": "video_type",
                 "callbackUrl": "callback_url",
                 "criteriaText": "criteria_text",
             }

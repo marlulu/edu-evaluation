@@ -108,6 +108,46 @@ def transcribe_with_local_whisper(
         return None
 
 
+def transcribe_with_faster_whisper(
+    audio_path: str,
+    model_name: str = "tiny",
+    language: str = "zh",
+) -> TranscriptionResult | None:
+    """使用 faster-whisper 进行语音转录（不需要 PyTorch）"""
+    try:
+        from faster_whisper import WhisperModel
+
+        logger.info("Loading faster-whisper model (%s)...", model_name)
+        model = WhisperModel(model_name, device="cpu", compute_type="int8")
+        segments_raw, info = model.transcribe(
+            audio_path,
+            language=language,
+            beam_size=5,
+            vad_filter=True,
+        )
+
+        transcription = TranscriptionResult(language=language)
+
+        for segment in segments_raw:
+            transcription.segments.append(TranscriptionSegment(
+                start_time=segment.start,
+                end_time=segment.end,
+                text=segment.text.strip(),
+                confidence=segment.avg_logprob,
+            ))
+
+        transcription.full_text = " ".join(seg.text for seg in transcription.segments)
+        _calculate_statistics(transcription)
+
+        logger.info("faster-whisper transcription done: %d segments, %d chars",
+                     len(transcription.segments), transcription.total_chars)
+        return transcription
+
+    except Exception as e:
+        logger.warning("faster-whisper transcription failed: %s", e)
+        return None
+
+
 def _calculate_statistics(result: TranscriptionResult) -> None:
     """计算转录统计信息"""
     import re

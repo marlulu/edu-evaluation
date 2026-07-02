@@ -21,7 +21,6 @@ import {
   List,
   Modal,
   Progress,
-  Radio,
   Row,
   Select,
   Space,
@@ -41,7 +40,9 @@ import {
   getVideoCapabilities,
   getVideoTaskStatus,
   listVideoTasks,
-  uploadVideo
+  uploadVideo,
+  uploadCriteria,
+  parseCriteriaFile
 } from './api';
 
 const { Paragraph, Text, Title } = Typography;
@@ -90,6 +91,9 @@ export function VideoAnalysis() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | undefined>();
+  const [criteriaFile, setCriteriaFile] = useState<File | undefined>();
+  const [criteriaText, setCriteriaText] = useState<string | undefined>();
+  const [criteriaParsing, setCriteriaParsing] = useState(false);
   const [form] = Form.useForm();
 
   const loadTasks = useCallback(async () => {
@@ -168,8 +172,42 @@ export function VideoAnalysis() {
     return () => clearInterval(timer);
   }, [selectedTask?.taskId, selectedTask?.status]);
 
-  const handleSelectTask = (task: VideoAnalysisResult) => {
+  const handleSelectTask = async (task: VideoAnalysisResult) => {
+    // 先设置摘要信息，立即显示
     setSelectedTask(task);
+    // 如果任务已完成或失败，加载完整详情
+    if (task.status === 'completed' || task.status === 'failed') {
+      try {
+        const detail = await getVideoTaskStatus(task.taskId);
+        setSelectedTask(detail);
+      } catch {
+        // 加载失败，保留摘要信息
+      }
+    }
+  };
+
+  const handleCriteriaFileChange = async (file: File | undefined) => {
+    setCriteriaFile(file);
+    setCriteriaText(undefined);
+    if (!file) return;
+
+    setCriteriaParsing(true);
+    try {
+      const uploadResult = await uploadCriteria(file);
+      if (uploadResult.success && uploadResult.filePath) {
+        const parseResult = await parseCriteriaFile(uploadResult.filePath);
+        if (parseResult.success && parseResult.text) {
+          setCriteriaText(parseResult.text);
+        } else {
+          apiMessage.warning('评判标准文件解析失败');
+        }
+      }
+    } catch (error) {
+      console.error('解析评判标准文件失败:', error);
+      apiMessage.warning('评判标准文件解析失败');
+    } finally {
+      setCriteriaParsing(false);
+    }
   };
 
   const handleDeleteTask = async (taskId: string) => {
@@ -195,19 +233,20 @@ export function VideoAnalysis() {
 
       setUploading(true);
 
-      // 1. 上传文件
+      // 1. 上传视频文件
       const uploadResult = await uploadVideo(uploadFile);
       if (!uploadResult.success || !uploadResult.filePath) {
         apiMessage.error(uploadResult.message || '文件上传失败');
         return;
       }
 
-      // 2. 提交分析任务
+      // 2. 评判标准已在上传时解析完毕，直接使用 criteriaText 状态
+
+      // 3. 提交分析任务
       const result = await analyzeVideoAsync({
         fileName: uploadResult.fileName || uploadFile.name,
         filePath: uploadResult.filePath,
-        videoType: values.videoType,
-        criteriaText: values.criteriaText || undefined,
+        criteriaText: criteriaText,
         options: {
           extractKeyframes: true,
           transcribeAudio: true,
@@ -220,6 +259,8 @@ export function VideoAnalysis() {
       apiMessage.success('分析任务已提交');
       setUploadModalOpen(false);
       setUploadFile(undefined);
+      setCriteriaFile(undefined);
+      setCriteriaText(undefined);
       form.resetFields();
 
       // 立即将新任务插入列表并选中
@@ -376,6 +417,9 @@ export function VideoAnalysis() {
         onCancel={() => {
           setUploadModalOpen(false);
           setUploadFile(undefined);
+          setCriteriaFile(undefined);
+          setCriteriaText(undefined);
+          setCriteriaParsing(false);
           form.resetFields();
         }}
         confirmLoading={uploading}
@@ -383,7 +427,7 @@ export function VideoAnalysis() {
         cancelText="取消"
         width={600}
       >
-        <Form form={form} layout="vertical" initialValues={{ videoType: 'work', maxKeyframes: 15 }}>
+        <Form form={form} layout="vertical" initialValues={{ maxKeyframes: 15 }}>
           <Form.Item label="视频文件" required>
             <Upload.Dragger
               multiple={false}
@@ -402,13 +446,6 @@ export function VideoAnalysis() {
             </Upload.Dragger>
           </Form.Item>
 
-          <Form.Item name="videoType" label="分析类型" rules={[{ required: true }]}>
-            <Radio.Group>
-              <Radio.Button value="work">作品讲解</Radio.Button>
-              <Radio.Button value="defense">答辩</Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-
           <Form.Item name="maxKeyframes" label="最大关键帧数">
             <Select
               options={[
@@ -420,11 +457,46 @@ export function VideoAnalysis() {
             />
           </Form.Item>
 
-          <Form.Item name="criteriaText" label="评判标准（可选，留空使用内置默认标准）">
-            <Input.TextArea
-              rows={4}
-              placeholder="粘贴评判标准文本，或留空使用系统内置的默认评判标准..."
-            />
+          <Form.Item label="评判标准文件（可选，留空使用内置默认标准）">
+            <Upload.Dragger
+              multiple={false}
+              maxCount={1}
+              accept=".pdf,.docx,.doc,.txt"
+              fileList={criteriaFile ? [{ uid: criteriaFile.name, name: criteriaFile.name, status: 'done' }] : []}
+              beforeUpload={(file) => {
+                handleCriteriaFileChange(file);
+                return false;
+              }}
+              onRemove={() => {
+                setCriteriaFile(undefined);
+                setCriteriaText(undefined);
+              }}
+            >
+              <p style={{ fontSize: 24, color: '#1890ff' }}><UploadOutlined /></p>
+              <p>点击或拖拽评判标准文件到此区域</p>
+              <p style={{ color: '#999' }}>支持 PDF, Word (.docx), 文本 (.txt) 格式</p>
+            </Upload.Dragger>
+            {criteriaParsing && (
+              <div style={{ marginTop: 12, textAlign: 'center' }}>
+                <LoadingOutlined style={{ marginRight: 8 }} />
+                <Text type="secondary">正在解析评判标准文件...</Text>
+              </div>
+            )}
+            {criteriaText && !criteriaParsing && (
+              <Card
+                size="small"
+                title="评判标准预览"
+                style={{ marginTop: 12, maxHeight: 300, overflow: 'auto' }}
+                extra={<Tag color="green">解析成功</Tag>}
+              >
+                <Paragraph
+                  style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: 13 }}
+                  ellipsis={{ rows: 8, expandable: true, symbol: '展开' }}
+                >
+                  {criteriaText}
+                </Paragraph>
+              </Card>
+            )}
           </Form.Item>
         </Form>
       </Modal>
@@ -488,7 +560,7 @@ function TaskDetail({
         <Card title="视频信息">
           <Descriptions column={2}>
             <Descriptions.Item label="时长">
-              {formatDuration(task.metadata.durationSeconds ?? task.metadata.duration_seconds ?? 0)}
+              {formatDuration((task.metadata as any).durationSeconds ?? (task.metadata as any).duration_seconds ?? 0)}
             </Descriptions.Item>
             <Descriptions.Item label="分辨率">
               {task.metadata.width} × {task.metadata.height}
@@ -498,10 +570,10 @@ function TaskDetail({
             </Descriptions.Item>
             <Descriptions.Item label="编码">{task.metadata.codec}</Descriptions.Item>
             <Descriptions.Item label="文件大小">
-              {formatFileSize(task.metadata.fileSize ?? task.metadata.file_size ?? 0)}
+              {formatFileSize((task.metadata as any).fileSize ?? (task.metadata as any).file_size ?? 0)}
             </Descriptions.Item>
             <Descriptions.Item label="音频">
-              {(task.metadata.hasAudio ?? task.metadata.has_audio) ? (
+              {((task.metadata as any).hasAudio ?? (task.metadata as any).has_audio) ? (
                 <Tag color="green">有音频</Tag>
               ) : (
                 <Tag color="default">无音频</Tag>
@@ -516,17 +588,17 @@ function TaskDetail({
         <Card title="技术质量评估">
           <Descriptions column={2}>
             <Descriptions.Item label="视频质量">
-              <Tag>{task.technicalQuality.videoQuality ?? task.technicalQuality.video_quality}</Tag>
+              <Tag>{(task.technicalQuality as any).videoQuality ?? (task.technicalQuality as any).video_quality}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="音频质量">
-              <Tag>{task.technicalQuality.audioQuality ?? task.technicalQuality.audio_quality}</Tag>
+              <Tag>{(task.technicalQuality as any).audioQuality ?? (task.technicalQuality as any).audio_quality}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="稳定性">
               <Tag>{task.technicalQuality.stability}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="综合评分">
               <Progress
-                percent={task.technicalQuality.overallScore ?? task.technicalQuality.overall_score}
+                percent={(task.technicalQuality as any).overallScore ?? (task.technicalQuality as any).overall_score}
                 size="small"
                 style={{ width: 120 }}
               />
@@ -587,30 +659,30 @@ function TaskDetail({
       )}
 
       {/* 语音转录 */}
-      {task.audioAnalysis && (task.audioAnalysis.transcription ?? task.audioAnalysis.transcription)?.length > 0 && (
+      {task.audioAnalysis && (task.audioAnalysis as any).transcription?.length > 0 && (
         <Card
           title={
             <Space>
               <AudioOutlined />
               <span>语音转录</span>
-              <Tag>{(task.audioAnalysis.detectedLanguage ?? task.audioAnalysis.detected_language) === 'zh' ? '中文' : '英文'}</Tag>
+              <Tag>{((task.audioAnalysis as any).detectedLanguage ?? (task.audioAnalysis as any).detected_language) === 'zh' ? '中文' : '英文'}</Tag>
             </Space>
           }
           extra={
             <Space>
               <Text type="secondary">
-                语速：{(task.audioAnalysis.averageSpeechRate ?? task.audioAnalysis.average_speech_rate ?? 0).toFixed(0)} 字/分钟
+                语速：{((task.audioAnalysis as any).averageSpeechRate ?? (task.audioAnalysis as any).average_speech_rate ?? 0).toFixed(0)} 字/分钟
               </Text>
-              {(task.audioAnalysis.clarityScore ?? task.audioAnalysis.clarity_score) && (
+              {((task.audioAnalysis as any).clarityScore ?? (task.audioAnalysis as any).clarity_score) && (
                 <Text type="secondary">
-                  清晰度：{((task.audioAnalysis.clarityScore ?? task.audioAnalysis.clarity_score) * 100).toFixed(0)}%
+                  清晰度：{(((task.audioAnalysis as any).clarityScore ?? (task.audioAnalysis as any).clarity_score) * 100).toFixed(0)}%
                 </Text>
               )}
             </Space>
           }
         >
           <Table
-            dataSource={task.audioAnalysis.transcription ?? task.audioAnalysis.transcription}
+            dataSource={(task.audioAnalysis as any).transcription}
             rowKey={(record: any) => `${record.startTime ?? record.start_time}-${record.endTime ?? record.end_time}`}
             size="small"
             pagination={{ pageSize: 10 }}
@@ -669,6 +741,161 @@ function TaskDetail({
   );
 }
 
+// 评分等级颜色
+function getGradeColor(grade: string): string {
+  if (grade.includes('优秀')) return '#52c41a';
+  if (grade.includes('良好')) return '#1890ff';
+  if (grade.includes('合格') || grade.includes('中等') || grade.includes('及格')) return '#faad14';
+  return '#ff4d4f';
+}
+
+// 评分结果展示组件
+function EvaluationView({ evaluation }: { evaluation: any }) {
+  const totalScore = evaluation.totalScore ?? evaluation.total_score ?? 0;
+  const grade = evaluation.grade ?? '';
+  const scores: any[] = evaluation.scores ?? [];
+  const strengths: string[] = evaluation.strengths ?? [];
+  const weaknesses: string[] = evaluation.weaknesses ?? [];
+  const prioritySuggestions: string[] = evaluation.prioritySuggestions ?? evaluation.priority_suggestions ?? [];
+  const rawText: string | undefined = evaluation.rawText ?? evaluation.raw_text;
+
+  // 如果只有原始文本（JSON 解析失败），直接显示 markdown
+  if (rawText && scores.length === 0) {
+    return (
+      <Card
+        title="评分结果"
+        style={{ background: 'linear-gradient(135deg, #f6f8ff 0%, #f0f5ff 100%)', border: '1px solid #d6e4ff' }}
+      >
+        <div className="markdown-body">
+          <ReactMarkdown>{rawText}</ReactMarkdown>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      title="评分结果"
+      style={{ background: 'linear-gradient(135deg, #f6f8ff 0%, #f0f5ff 100%)', border: '1px solid #d6e4ff' }}
+    >
+      <Space direction="vertical" size={20} style={{ width: '100%' }}>
+        {/* 总分和等级 */}
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <div style={{ fontSize: 48, fontWeight: 700, color: getGradeColor(grade), lineHeight: 1 }}>
+            {totalScore.toFixed(1)}
+          </div>
+          <div style={{ fontSize: 14, color: '#666', marginTop: 4 }}>/ 100</div>
+          {grade && (
+            <Tag
+              color={getGradeColor(grade)}
+              style={{ fontSize: 16, padding: '4px 16px', marginTop: 8 }}
+            >
+              {grade}
+            </Tag>
+          )}
+        </div>
+
+        {/* 各维度得分 */}
+        {scores.length > 0 && (
+          <div>
+            <Text strong style={{ fontSize: 15 }}>各维度得分</Text>
+            <div style={{ marginTop: 12 }}>
+              {scores.map((item: any, index: number) => {
+                const dim = item.dimension ?? '';
+                const max = item.maxScore ?? item.max_score ?? 100;
+                const sc = item.score ?? 0;
+                const pct = max > 0 ? Math.round((sc / max) * 100) : 0;
+                const evidence = item.evidence ?? '';
+                const suggestion = item.suggestion ?? '';
+
+                return (
+                  <div key={index} style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text>{dim}</Text>
+                      <Text strong>{sc} / {max}</Text>
+                    </div>
+                    <Progress
+                      percent={pct}
+                      strokeColor={pct >= 80 ? '#52c41a' : pct >= 60 ? '#1890ff' : pct >= 40 ? '#faad14' : '#ff4d4f'}
+                      size="small"
+                    />
+                    {evidence && (
+                      <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                        📋 {evidence}
+                      </div>
+                    )}
+                    {suggestion && (
+                      <div style={{ fontSize: 12, color: '#1890ff', marginTop: 2 }}>
+                        💡 {suggestion}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 优点和不足 */}
+        <Row gutter={16}>
+          {strengths.length > 0 && (
+            <Col span={12}>
+              <Card size="small" title="✅ 优点" style={{ background: '#f6ffed', border: '1px solid #b7eb8f' }}>
+                <List
+                  size="small"
+                  dataSource={strengths}
+                  renderItem={(item: string, index: number) => (
+                    <List.Item key={index} style={{ padding: '4px 0', border: 'none' }}>
+                      <Text>{item}</Text>
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            </Col>
+          )}
+          {weaknesses.length > 0 && (
+            <Col span={12}>
+              <Card size="small" title="⚠️ 不足" style={{ background: '#fff2e8', border: '1px solid #ffbb96' }}>
+                <List
+                  size="small"
+                  dataSource={weaknesses}
+                  renderItem={(item: string, index: number) => (
+                    <List.Item key={index} style={{ padding: '4px 0', border: 'none' }}>
+                      <Text>{item}</Text>
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            </Col>
+          )}
+        </Row>
+
+        {/* 优先改进建议 */}
+        {prioritySuggestions.length > 0 && (
+          <div>
+            <Text strong style={{ fontSize: 15 }}>🎯 优先改进建议</Text>
+            <List
+              size="small"
+              style={{ marginTop: 8 }}
+              dataSource={prioritySuggestions}
+              renderItem={(item: string, index: number) => (
+                <List.Item key={index}>
+                  <Text>
+                    <Tag color={index === 0 ? 'red' : index === 1 ? 'orange' : 'blue'}>
+                      {index === 0 ? '最紧迫' : index === 1 ? '次重要' : '锦上添花'}
+                    </Tag>
+                    {item}
+                  </Text>
+                </List.Item>
+              )}
+            />
+          </div>
+        )}
+      </Space>
+    </Card>
+  );
+}
+
 // 内容分析视图组件
 function ContentAnalysisView({ analysis }: { analysis: any }) {
   // 兼容 snake_case 和 camelCase
@@ -677,17 +904,17 @@ function ContentAnalysisView({ analysis }: { analysis: any }) {
   const keyPoints: string[] = analysis.keyPoints ?? analysis.key_points ?? [];
   const keywords: string[] = analysis.keywords ?? [];
   const scenes: any[] = analysis.scenes ?? [];
+  const evaluation = analysis.evaluation ?? null;
 
-  const [expandedSummary, setExpandedSummary] = useState(false);
   const [expandedPoints, setExpandedPoints] = useState(false);
   const displayPoints = expandedPoints ? keyPoints : keyPoints.slice(0, 5);
 
-  // 摘要预览（前 300 字符）
-  const summaryPreview = summary.length > 300 ? summary.slice(0, 300) + '...' : summary;
-  const needExpand = summary.length > 300;
-
   return (
-    <Card title="内容分析">
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      {/* 评分结果 */}
+      {evaluation && <EvaluationView evaluation={evaluation} />}
+
+      <Card title="内容分析">
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         {/* 主题 */}
         <div>
@@ -695,23 +922,13 @@ function ContentAnalysisView({ analysis }: { analysis: any }) {
           <Tag color="blue">{overallTopic}</Tag>
         </div>
 
-        {/* 摘要 - Markdown 渲染，可折叠 */}
+        {/* 摘要 - Markdown 渲染，全部显示 */}
         <div>
           <Text strong>内容摘要：</Text>
           <div style={{ marginTop: 8, padding: '12px 16px', background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
-            <div className="markdown-body" style={{ maxHeight: expandedSummary ? 'none' : 200, overflow: 'hidden', transition: 'max-height 0.3s' }}>
-              <ReactMarkdown>{expandedSummary ? summary : summaryPreview}</ReactMarkdown>
+            <div className="markdown-body">
+              <ReactMarkdown>{summary}</ReactMarkdown>
             </div>
-            {needExpand && (
-              <Button
-                type="link"
-                size="small"
-                onClick={() => setExpandedSummary(!expandedSummary)}
-                style={{ padding: '4px 0', marginTop: 8 }}
-              >
-                {expandedSummary ? '收起' : '展开全文'}
-              </Button>
-            )}
           </div>
         </div>
 
@@ -796,5 +1013,6 @@ function ContentAnalysisView({ analysis }: { analysis: any }) {
         )}
       </Space>
     </Card>
+    </Space>
   );
 }

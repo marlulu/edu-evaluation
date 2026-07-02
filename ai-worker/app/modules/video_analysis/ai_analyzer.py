@@ -36,6 +36,11 @@ def _call_ai(client, model: str, prompt: str, max_retries: int = 3) -> str:
                 input=[{"role": "user", "content": prompt}],
                 store=False,
             )
+            # 检查响应是否完整
+            print(f"[DEBUG] AI response status: {resp.status}")
+            if hasattr(resp, 'incomplete_details') and resp.incomplete_details:
+                print(f"[DEBUG] AI response incomplete: {resp.incomplete_details}")
+            print(f"[DEBUG] AI response output_text length: {len(resp.output_text) if resp.output_text else 0}")
             return resp.output_text
         except Exception as e:
             if attempt < max_retries - 1:
@@ -119,7 +124,6 @@ def analyze_comprehensive(
     transcription: TranscriptionResult | None,
     keyframes: list[Keyframe],
     scene_description: str,
-    video_type: str = "work",
 ) -> str:
     """调用 AI 模型进行综合分析"""
     # 语音节奏分析
@@ -181,9 +185,7 @@ def analyze_comprehensive(
             terms_list = list(cn_terms)[:10] + list(en_terms)[:5]
             terms_info = f"\n- 识别到的专业词汇: {', '.join(terms_list)}"
 
-    type_name = "答辩" if video_type == "defense" else "作品讲解"
-
-    prompt = f"""请分析以下{type_name}视频，用中文回答：
+    prompt = f"""请分析以下视频，用中文回答：
 
 【视频元数据】
 - 时长: {metadata.duration:.1f}秒
@@ -238,12 +240,9 @@ def evaluate_with_criteria(
     model: str,
     analysis_result: str,
     criteria_text: str,
-    video_type: str = "work",
-) -> str:
-    """根据评判标准对视频分析结果进行评分"""
-    type_name = "答辩" if video_type == "defense" else "作品讲解"
-
-    prompt = f"""你是一位专业的{type_name}视频评审专家。请根据以下【评判标准】对【视频分析结果】进行逐条评分和指导。
+) -> dict | str:
+    """根据评判标准对视频分析结果进行评分，返回结构化字典或原始文本"""
+    prompt = f"""你是一位专业的视频评审专家。请根据以下【评判标准】对【视频分析结果】进行逐条评分。
 
 【评判标准】
 {criteria_text}
@@ -251,35 +250,85 @@ def evaluate_with_criteria(
 【视频分析结果】
 {analysis_result}
 
-请严格按照评判标准的每个评分项，逐条进行评估，用中文回答：
+请严格按照以下 JSON 格式返回评分结果，不要输出任何其他内容：
 
-一、逐项评分
-对评判标准中的每个评分项，给出：
-- 得分（X/满分）
-- 得分依据（引用分析结果中的具体内容）
-- 改进建议（具体可执行的操作）
+```json
+{{
+  "total_score": 85.0,
+  "grade": "良好",
+  "scores": [
+    {{
+      "dimension": "评分维度名称",
+      "max_score": 15.0,
+      "score": 12.0,
+      "evidence": "得分依据（引用分析结果中的具体内容）",
+      "suggestion": "改进建议（具体可执行的操作）"
+    }}
+  ],
+  "strengths": ["优点1", "优点2"],
+  "weaknesses": ["不足1", "不足2"],
+  "priority_suggestions": [
+    "最紧迫：...",
+    "次重要：...",
+    "锦上添花：..."
+  ]
+}}
+```
 
-格式示例：
-1. [标准项名称] X/满分
-   依据：...
-   改进建议：...
+要求：
+1. scores 数组必须包含评判标准中的每一个评分项，保持原始维度名称和满分
+2. total_score 为所有 scores 中 score 之和
+3. grade 根据 total_score 判定：优秀(90+)/良好(80+)/合格(60+)/不合格(<60)
+4. strengths 列出 2-3 个主要优点
+5. weaknesses 列出 2-3 个主要不足
+6. priority_suggestions 列出最重要的 3 个改进点"""
 
-二、总分汇总
-总分：XX/100
-等级：优秀(90+)/良好(80+)/中等(70+)/及格(60+)/不及格(<60)
+    raw = _call_ai(client, model, prompt)
+    return _parse_evaluation_json(raw, criteria_text)
 
-三、多维度指导建议
-从以下维度给出综合改进方案（每维度2-3条具体建议）：
-1. 【内容层面】作品内容/研究内容的改进方向
-2. 【表达层面】语言表达、谈吐节奏的提升方法
-3. 【技术层面】技术深度、专业性的加强建议
-4. 【结构层面】内容组织、逻辑结构的优化方案
-5. {"【答辩技巧】答辩礼仪、应答策略、时间分配建议" if video_type == "defense" else "【演示技巧】演示流程、亮点展示、观众互动建议"}
 
-四、核心改进优先级
-列出最重要的3个改进点，按优先级排序：
-1. 最紧迫：...
-2. 次重要：...
-3. 锦上添花：..."""
+def _parse_evaluation_json(raw: str, criteria_text: str) -> dict | str:
+    """解析 LLM 返回的评分 JSON，容错处理"""
+    from .schemas import EvaluationResult, ScoreItem
 
-    return _call_ai(client, model, prompt)
+    # 尝试从 markdown 代码块中提取 JSON
+    json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', raw, re.DOTALL)
+    text = json_match.group(1).strip() if json_match else raw.strip()
+
+    # 尝试直接解析
+    try:
+        import json
+        data = json.loads(text)
+        # 验证并规范化
+        result = EvaluationResult(
+            total_score=float(data.get("total_score", 0)),
+            grade=str(data.get("grade", "")),
+            scores=[
+                ScoreItem(
+                    dimension=str(s.get("dimension", "")),
+                    max_score=float(s.get("max_score", 0)),
+                    score=float(s.get("score", 0)),
+                    evidence=str(s.get("evidence", "")),
+                    suggestion=str(s.get("suggestion", "")),
+                )
+                for s in data.get("scores", [])
+            ],
+            strengths=[str(s) for s in data.get("strengths", [])],
+            weaknesses=[str(w) for w in data.get("weaknesses", [])],
+            priority_suggestions=[str(p) for p in data.get("priority_suggestions", [])],
+            criteria_text=criteria_text,
+        )
+        return result.model_dump()
+    except Exception as e:
+        logger.warning("Failed to parse evaluation JSON: %s", e)
+        # 回退：返回原始文本包装为简单结构
+        return {
+            "total_score": 0,
+            "grade": "",
+            "scores": [],
+            "strengths": [],
+            "weaknesses": [],
+            "priority_suggestions": [],
+            "criteria_text": criteria_text,
+            "raw_text": raw,
+        }

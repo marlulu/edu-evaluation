@@ -91,6 +91,26 @@ export type ContentAnalysis = {
   keyPoints: string[];
   scenes?: VideoScene[];
   keywords?: string[];
+  evaluation?: EvaluationResult;
+};
+
+export type ScoreItem = {
+  dimension: string;
+  maxScore: number;
+  score: number;
+  evidence: string;
+  suggestion: string;
+};
+
+export type EvaluationResult = {
+  totalScore: number;
+  grade: string;
+  scores: ScoreItem[];
+  strengths: string[];
+  weaknesses: string[];
+  prioritySuggestions: string[];
+  criteriaText?: string;
+  rawText?: string;
 };
 
 export type TechnicalQuality = {
@@ -122,7 +142,6 @@ export type VideoAnalysisRequest = {
   fileName: string;
   filePath: string;
   options?: VideoAnalysisOptions;
-  videoType?: 'work' | 'defense';
   criteriaText?: string;
 };
 
@@ -142,6 +161,18 @@ export async function uploadVideo(file: File): Promise<VideoUploadResult> {
   return response.data;
 }
 
+export async function uploadCriteria(file: File): Promise<VideoUploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await axios.post<VideoUploadResult>(`${baseUrl}/upload-criteria`, formData);
+  return response.data;
+}
+
+export async function parseCriteriaFile(filePath: string): Promise<{ success: boolean; text: string }> {
+  const response = await axios.post<{ success: boolean; text: string }>(`${baseUrl}/parse-criteria`, { filePath });
+  return response.data;
+}
+
 export async function analyzeVideo(request: VideoAnalysisRequest): Promise<VideoAnalysisResult> {
   const response = await axios.post<VideoAnalysisResult>(`${baseUrl}/analyze`, request);
   return response.data;
@@ -157,6 +188,27 @@ export async function getVideoTaskStatus(taskId: string): Promise<VideoAnalysisR
   const response = await axios.get<any>(`${baseUrl}/tasks/${taskId}`);
   const data = response.data;
   // 兼容 snake_case 和 camelCase
+  const contentAnalysis = data.contentAnalysis ?? data.content_analysis;
+  // 转换 evaluation 内部字段
+  if (contentAnalysis?.evaluation) {
+    const ev = contentAnalysis.evaluation;
+    contentAnalysis.evaluation = {
+      totalScore: ev.totalScore ?? ev.total_score ?? 0,
+      grade: ev.grade ?? '',
+      scores: (ev.scores ?? []).map((s: any) => ({
+        dimension: s.dimension ?? '',
+        maxScore: s.maxScore ?? s.max_score ?? 0,
+        score: s.score ?? 0,
+        evidence: s.evidence ?? '',
+        suggestion: s.suggestion ?? '',
+      })),
+      strengths: ev.strengths ?? [],
+      weaknesses: ev.weaknesses ?? [],
+      prioritySuggestions: ev.prioritySuggestions ?? ev.priority_suggestions ?? [],
+      criteriaText: ev.criteriaText ?? ev.criteria_text ?? '',
+      rawText: ev.rawText ?? ev.raw_text,
+    };
+  }
   return {
     taskId: data.taskId ?? data.task_id ?? taskId,
     fileName: data.fileName ?? data.file_name ?? '',
@@ -164,7 +216,7 @@ export async function getVideoTaskStatus(taskId: string): Promise<VideoAnalysisR
     metadata: data.metadata,
     keyframes: data.keyframes,
     audioAnalysis: data.audioAnalysis ?? data.audio_analysis,
-    contentAnalysis: data.contentAnalysis ?? data.content_analysis,
+    contentAnalysis,
     technicalQuality: data.technicalQuality ?? data.technical_quality,
     progress: data.progress ?? 0,
     startedAt: data.startedAt ?? data.started_at,

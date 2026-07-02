@@ -5,7 +5,7 @@ spring:
   application:
     name: edu-evaluation-backend
   datasource:
-    url: jdbc:mysql://localhost:13306/edu_evaluation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:3307/edu_evaluation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: edu
     password: edu_password
   jpa:
@@ -39,7 +39,7 @@ management:
 app:
   upload-dir: data/uploads
   storage:
-    endpoint: http://localhost:9000
+    endpoint: http://localhost:9002
     bucket: coursework-submissions
     access-key: minio
     secret-key: minio_password
