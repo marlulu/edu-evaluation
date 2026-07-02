@@ -6,9 +6,9 @@ WORKDIR /app
 RUN npm config set registry https://registry.np.taobao.org
 
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --include=dev
 COPY . .
-RUN npm run build
+RUN npx tsc -b && npx vite build
 
 # ---- Production Stage ----
 FROM nginx:alpine
