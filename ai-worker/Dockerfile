@@ -1,4 +1,4 @@
-FROM docker.1ms.run/library/python:3.11-slim
+FROM python:3.11-slim
 WORKDIR /app
 
 # 系统依赖（ffmpeg 用于音视频处理）
