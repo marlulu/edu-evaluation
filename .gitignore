@@ -40,3 +40,4 @@ infra/data/
 # Environment files
 .env
 *.local
+*.tar
