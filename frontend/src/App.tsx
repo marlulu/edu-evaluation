@@ -2,6 +2,7 @@ import {
   BookOutlined,
   FileOutlined,
   LogoutOutlined,
+  TeamOutlined,
   UserOutlined
 } from '@ant-design/icons';
 import { Avatar, Button, Card, Layout, Menu, Space, Tag, Typography, message } from 'antd';
@@ -9,12 +10,13 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { LoginPage, type LoginProfile, type UserRole } from './features/auth/LoginPage';
 import { WorkAnalysis } from './features/work-analysis/WorkAnalysis';
+import { ClassManagement } from './features/class-management/ClassManagement';
 
 const { Header, Sider, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
 
 type SessionUser = LoginProfile;
-type ModuleKey = 'dashboard' | 'work';
+type ModuleKey = 'dashboard' | 'work' | 'class';
 
 const SESSION_KEY = 'edu-evaluation-session';
 
@@ -31,9 +33,9 @@ const roleLabel: Record<UserRole, string> = {
 };
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
-  ADMIN: ['dashboard', 'work'],
-  TEACHER: ['dashboard', 'work'],
-  ASSISTANT: ['dashboard'],
+  ADMIN: ['dashboard', 'work', 'class'],
+  TEACHER: ['dashboard', 'work', 'class'],
+  ASSISTANT: ['dashboard', 'class'],
   STUDENT: ['dashboard']
 };
 
@@ -42,7 +44,8 @@ const moduleMeta: Record<
   { label: string; icon: ReactNode; description: string }
 > = {
   dashboard: { label: '工作台', icon: <BookOutlined />, description: '查看当前角色下的工作入口和模块概览。' },
-  work: { label: '作品分析', icon: <FileOutlined />, description: '上传作品进行元数据提取、语音识别、内容分析和评判标准评分。' }
+  work: { label: '作品分析', icon: <FileOutlined />, description: '上传作品进行元数据提取、语音识别、内容分析和评判标准评分。' },
+  class: { label: '班级管理', icon: <TeamOutlined />, description: '管理班级和学生，查看学生作品分析结果。' }
 };
 
 export default function App() {
@@ -162,6 +165,7 @@ export default function App() {
               <Dashboard user={sessionUser} visibleModules={visibleModules} onSelect={setActiveModule} />
             )}
             {activeModule === 'work' && <WorkAnalysis />}
+            {activeModule === 'class' && <ClassManagement />}
           </Content>
         </Layout>
       </Layout>
