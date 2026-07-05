@@ -201,233 +201,225 @@ class VideoAnalyzer:
 
         # 1. 提取元数据
         update_progress(VideoTaskStatus.EXTRACTING_METADATA, 10, "提取视频元数据")
-            metadata = extract_metadata(request.file_path)
-            result.metadata = VideoMetadataSchema(
-                duration_seconds=metadata.duration,
-                width=metadata.width,
-                height=metadata.height,
-                fps=metadata.fps,
-                codec=metadata.work_codec,
-                bitrate=0,
-                file_size=metadata.file_size,
-                format_name=metadata.format_name,
-                has_audio=metadata.audio_codec != "unknown",
-                audio_codec=metadata.audio_codec,
-                audio_sample_rate=metadata.sample_rate,
+        metadata = extract_metadata(request.file_path)
+        result.metadata = VideoMetadataSchema(
+            duration_seconds=metadata.duration,
+            width=metadata.width,
+            height=metadata.height,
+            fps=metadata.fps,
+            codec=metadata.work_codec,
+            bitrate=0,
+            file_size=metadata.file_size,
+            format_name=metadata.format_name,
+            has_audio=metadata.audio_codec != "unknown",
+            audio_codec=metadata.audio_codec,
+            audio_sample_rate=metadata.sample_rate,
+        )
+
+        # 检查视频时长限制
+        if metadata.duration > 30 * 60:
+            result.warnings.append("视频超过30分钟，仅分析前30分钟")
+
+        # 2. 提取关键帧
+        keyframes_dir = self.temp_dir / task_id / "keyframes"
+        keyframes: list[Keyframe] = []
+
+        if request.options.extract_keyframes:
+            update_progress(VideoTaskStatus.EXTRACTING_KEYFRAMES, 25, "提取关键帧")
+
+            method = request.options.keyframe_method.value if hasattr(request.options.keyframe_method, 'value') else str(request.options.keyframe_method)
+            keyframes = extract_keyframes_ffmpeg(
+                request.file_path,
+                keyframes_dir,
+                method=method,
+                threshold=request.options.scene_threshold,
+                max_frames=request.options.max_keyframes,
+                interval=request.options.min_interval_seconds,
             )
 
-            # 检查视频时长限制
-            if metadata.duration > 30 * 60:
-                result.warnings.append("视频超过30分钟，仅分析前30分钟")
+            # 上传关键帧到 MinIO 或转换为 base64
+            for kf in keyframes:
+                if kf.path and Path(kf.path).exists():
+                    # 尝试上传到 MinIO
+                    url = self._upload_to_minio(Path(kf.path), f"work-keyframes/{task_id}/frame_{kf.index:04d}.jpg")
+                    if url:
+                        kf.url = url  # 存储 MinIO URL，保留 kf.path 为本地路径
+                    else:
+                        # MinIO 上传失败，转换为 base64（带 data URI 前缀）
+                        kf.image_base64 = "data:image/jpeg;base64," + encode_image_base64(kf.path)
 
-            # 2. 提取关键帧
-            keyframes_dir = self.temp_dir / task_id / "keyframes"
-            keyframes: list[Keyframe] = []
+            result.keyframes = [
+                KeyframeInfo(
+                    frame_id=f"frame_{kf.index}",
+                    timestamp_seconds=kf.timestamp,
+                    frame_index=kf.index,
+                    scene_change_score=kf.change_score,
+                    image_path=kf.url,       # MinIO URL（前端展示用）
+                    image_base64=kf.image_base64,
+                )
+                for kf in keyframes
+            ]
+            result.status = VideoTaskStatus.EXTRACTING_KEYFRAMES
 
-            if request.options.extract_keyframes:
-                update_progress(VideoTaskStatus.EXTRACTING_KEYFRAMES, 25, "提取关键帧")
+        # 3. 提取和分析音频
+        audio_path = None
+        audio_features = None
+        transcription = None
 
-                method = request.options.keyframe_method.value if hasattr(request.options.keyframe_method, 'value') else str(request.options.keyframe_method)
-                keyframes = extract_keyframes_ffmpeg(
-                    request.file_path,
-                    keyframes_dir,
-                    method=method,
-                    threshold=request.options.scene_threshold,
-                    max_frames=request.options.max_keyframes,
-                    interval=request.options.min_interval_seconds,
+        if request.options.transcribe_audio and metadata.audio_codec != "unknown":
+            update_progress(VideoTaskStatus.EXTRACTING_AUDIO, 40, "提取音频")
+            audio_dir = self.temp_dir / task_id
+            audio_path = extract_audio(request.file_path, audio_dir)
+
+            update_progress(VideoTaskStatus.TRANSCRIBING, 50, "分析音频特征")
+            audio_features = analyze_audio(audio_path, metadata.duration)
+
+            # 语音转录
+            update_progress(VideoTaskStatus.TRANSCRIBING, 55, "语音转录")
+            # 优先使用本地 Whisper（已有缓存模型）
+            transcription = transcribe_with_local_whisper(audio_path)
+            if not transcription:
+                # 尝试 faster-whisper
+                transcription = transcribe_with_faster_whisper(audio_path)
+            if not transcription:
+                # 尝试 Whisper API
+                if self.settings.model_api_key and self.settings.model_api_base_url:
+                    transcription = transcribe_with_whisper_api(
+                        audio_path,
+                        self.settings.model_api_key,
+                        self.settings.model_api_base_url,
+                    )
+
+            # 构建音频分析结果
+            if transcription:
+                result.audio_analysis = AudioAnalysis(
+                    transcription=[
+                        AudioSegment(
+                            start_time=seg.start_time,
+                            end_time=seg.end_time,
+                            text=seg.text,
+                            confidence=seg.confidence,
+                        )
+                        for seg in transcription.segments
+                    ],
+                    total_speech_duration=audio_features.total_speech_duration if audio_features else 0,
+                    average_speech_rate=transcription.speech_rate,
+                    detected_language=transcription.language,
+                )
+            else:
+                result.audio_analysis = AudioAnalysis(
+                    transcription=[],
+                    total_speech_duration=audio_features.total_speech_duration if audio_features else 0,
+                    average_speech_rate=0,
+                    detected_language="unknown",
                 )
 
-                # 上传关键帧到 MinIO 或转换为 base64
-                for kf in keyframes:
-                    if kf.path and Path(kf.path).exists():
-                        # 尝试上传到 MinIO
-                        url = self._upload_to_minio(Path(kf.path), f"work-keyframes/{task_id}/frame_{kf.index:04d}.jpg")
-                        if url:
-                            kf.url = url  # 存储 MinIO URL，保留 kf.path 为本地路径
-                        else:
-                            # MinIO 上传失败，转换为 base64（带 data URI 前缀）
-                            kf.image_base64 = "data:image/jpeg;base64," + encode_image_base64(kf.path)
+            result.status = VideoTaskStatus.TRANSCRIBING
 
-                result.keyframes = [
-                    KeyframeInfo(
-                        frame_id=f"frame_{kf.index}",
-                        timestamp_seconds=kf.timestamp,
-                        frame_index=kf.index,
-                        scene_change_score=kf.change_score,
-                        image_path=kf.url,       # MinIO URL（前端展示用）
-                        image_base64=kf.image_base64,
-                    )
-                    for kf in keyframes
-                ]
-                result.status = VideoTaskStatus.EXTRACTING_KEYFRAMES
+        # 4. OCR 关键帧
+        if request.options.ocr_enabled and keyframes:
+            update_progress(VideoTaskStatus.ANALYZING_CONTENT, 65, "OCR 文字识别")
+            keyframes = ocr_keyframes(keyframes, use_paddle=True)
 
-            # 3. 提取和分析音频
-            audio_path = None
-            audio_features = None
-            transcription = None
+        # 5. AI 综合分析
+        scene_description = ""
+        if self.text_provider and keyframes:
+            update_progress(VideoTaskStatus.ANALYZING_CONTENT, 70, "AI 画面分析")
 
-            if request.options.transcribe_audio and metadata.audio_codec != "unknown":
-                update_progress(VideoTaskStatus.EXTRACTING_AUDIO, 40, "提取音频")
-                audio_dir = self.temp_dir / task_id
-                audio_path = extract_audio(request.file_path, audio_dir)
+            # 使用 vision provider 进行画面描述
+            client = self.vision_provider.create_client() if self.vision_provider else self.text_provider.create_client()
+            model = self.settings.vision_model_name or self.settings.text_model_name or "gpt-5.5"
 
-                update_progress(VideoTaskStatus.TRANSCRIBING, 50, "分析音频特征")
-                audio_features = analyze_audio(audio_path, metadata.duration)
+            scene_description = describe_keyframes_with_ai(client, model, keyframes)
 
-                # 语音转录
-                update_progress(VideoTaskStatus.TRANSCRIBING, 55, "语音转录")
-                # 优先使用本地 Whisper（已有缓存模型）
-                transcription = transcribe_with_local_whisper(audio_path)
-                if not transcription:
-                    # 尝试 faster-whisper
-                    transcription = transcribe_with_faster_whisper(audio_path)
-                if not transcription:
-                    # 尝试 Whisper API
-                    if self.settings.model_api_key and self.settings.model_api_base_url:
-                        transcription = transcribe_with_whisper_api(
-                            audio_path,
-                            self.settings.model_api_key,
-                            self.settings.model_api_base_url,
-                        )
+        # 6. AI 综合分析
+        ai_analysis_text = ""
+        if self.text_provider:
+            update_progress(VideoTaskStatus.ANALYZING_CONTENT, 80, "AI 综合分析")
 
-                # 构建音频分析结果
-                if transcription:
-                    result.audio_analysis = AudioAnalysis(
-                        transcription=[
-                            AudioSegment(
-                                start_time=seg.start_time,
-                                end_time=seg.end_time,
-                                text=seg.text,
-                                confidence=seg.confidence,
+            client = self.text_provider.create_client()
+            model = self.settings.text_model_name or "gpt-5.5"
+
+            ai_analysis_text = analyze_comprehensive(
+                client,
+                model,
+                metadata,
+                audio_features,
+                transcription,
+                keyframes,
+                scene_description,
+            )
+
+            logger.info("AI analysis text length: %d chars", len(ai_analysis_text) if ai_analysis_text else 0)
+
+            result.content_analysis = ContentAnalysis(
+                overall_topic="视频分析",
+                summary=ai_analysis_text if ai_analysis_text else "分析完成",
+                key_points=[],
+                keywords=[],
+            )
+
+        # 7. 评判标准评分（上传文件优先，否则使用默认标准）
+        if self.text_provider and ai_analysis_text:
+            update_progress(VideoTaskStatus.ANALYZING_CONTENT, 90, "评判标准评分")
+
+            client = self.text_provider.create_client()
+            model = self.settings.text_model_name or "gpt-5.5"
+
+            criteria_text = request.criteria_text or get_default_criteria()
+            logger.info("Using criteria: %s", "uploaded file" if request.criteria_text else "default")
+
+            evaluation_data = evaluate_with_criteria(
+                client,
+                model,
+                ai_analysis_text,
+                criteria_text,
+            )
+
+            # 将评分结果存入 content_analysis.evaluation
+            if result.content_analysis and isinstance(evaluation_data, dict):
+                try:
+                    result.content_analysis.evaluation = EvaluationResult(
+                        total_score=evaluation_data.get("total_score", 0),
+                        grade=evaluation_data.get("grade", ""),
+                        scores=[
+                            ScoreItem(
+                                dimension=s.get("dimension", ""),
+                                max_score=s.get("max_score", 0),
+                                score=s.get("score", 0),
+                                evidence=s.get("evidence", ""),
+                                suggestion=s.get("suggestion", ""),
                             )
-                            for seg in transcription.segments
+                            for s in evaluation_data.get("scores", [])
                         ],
-                        total_speech_duration=audio_features.total_speech_duration if audio_features else 0,
-                        average_speech_rate=transcription.speech_rate,
-                        detected_language=transcription.language,
+                        strengths=evaluation_data.get("strengths", []),
+                        weaknesses=evaluation_data.get("weaknesses", []),
+                        priority_suggestions=evaluation_data.get("priority_suggestions", []),
+                        criteria_text=evaluation_data.get("criteria_text", criteria_text),
                     )
-                else:
-                    result.audio_analysis = AudioAnalysis(
-                        transcription=[],
-                        total_speech_duration=audio_features.total_speech_duration if audio_features else 0,
-                        average_speech_rate=0,
-                        detected_language="unknown",
-                    )
+                    logger.info("Evaluation stored: total_score=%.1f, grade=%s",
+                                result.content_analysis.evaluation.total_score,
+                                result.content_analysis.evaluation.grade)
+                except Exception as e:
+                    logger.error("Failed to store evaluation result: %s", e)
 
-                result.status = VideoTaskStatus.TRANSCRIBING
+        # 8. 技术质量评估
+        result.technical_quality = self._assess_technical_quality(metadata, audio_features)
 
-            # 4. OCR 关键帧
-            if request.options.ocr_enabled and keyframes:
-                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 65, "OCR 文字识别")
-                keyframes = ocr_keyframes(keyframes, use_paddle=True)
+        # 9. 完成
+        completed_at = datetime.now(timezone.utc)
+        result.status = VideoTaskStatus.COMPLETED
+        result.progress = 100
+        result.completed_at = completed_at.isoformat()
+        result.processing_time_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-            # 5. AI 综合分析
-            scene_description = ""
-            if self.text_provider and keyframes:
-                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 70, "AI 画面分析")
+        update_progress(VideoTaskStatus.COMPLETED, 100, "分析完成")
 
-                # 使用 vision provider 进行画面描述
-                client = self.vision_provider.create_client() if self.vision_provider else self.text_provider.create_client()
-                model = self.settings.vision_model_name or self.settings.text_model_name or "gpt-5.5"
+        # 清理音频文件
+        if audio_path and Path(audio_path).exists():
+            Path(audio_path).unlink(missing_ok=True)
 
-                scene_description = describe_keyframes_with_ai(client, model, keyframes)
-
-            # 6. AI 综合分析
-            ai_analysis_text = ""
-            if self.text_provider:
-                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 80, "AI 综合分析")
-
-                client = self.text_provider.create_client()
-                model = self.settings.text_model_name or "gpt-5.5"
-
-                ai_analysis_text = analyze_comprehensive(
-                    client,
-                    model,
-                    metadata,
-                    audio_features,
-                    transcription,
-                    keyframes,
-                    scene_description,
-                )
-
-                logger.info("AI analysis text length: %d chars", len(ai_analysis_text) if ai_analysis_text else 0)
-
-                result.content_analysis = ContentAnalysis(
-                    overall_topic="视频分析",
-                    summary=ai_analysis_text if ai_analysis_text else "分析完成",
-                    key_points=[],
-                    keywords=[],
-                )
-
-            # 7. 评判标准评分（上传文件优先，否则使用默认标准）
-            if self.text_provider and ai_analysis_text:
-                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 90, "评判标准评分")
-
-                client = self.text_provider.create_client()
-                model = self.settings.text_model_name or "gpt-5.5"
-
-                criteria_text = request.criteria_text or get_default_criteria()
-                logger.info("Using criteria: %s", "uploaded file" if request.criteria_text else "default")
-
-                evaluation_data = evaluate_with_criteria(
-                    client,
-                    model,
-                    ai_analysis_text,
-                    criteria_text,
-                )
-
-                # 将评分结果存入 content_analysis.evaluation
-                if result.content_analysis and isinstance(evaluation_data, dict):
-                    try:
-                        result.content_analysis.evaluation = EvaluationResult(
-                            total_score=evaluation_data.get("total_score", 0),
-                            grade=evaluation_data.get("grade", ""),
-                            scores=[
-                                ScoreItem(
-                                    dimension=s.get("dimension", ""),
-                                    max_score=s.get("max_score", 0),
-                                    score=s.get("score", 0),
-                                    evidence=s.get("evidence", ""),
-                                    suggestion=s.get("suggestion", ""),
-                                )
-                                for s in evaluation_data.get("scores", [])
-                            ],
-                            strengths=evaluation_data.get("strengths", []),
-                            weaknesses=evaluation_data.get("weaknesses", []),
-                            priority_suggestions=evaluation_data.get("priority_suggestions", []),
-                            criteria_text=evaluation_data.get("criteria_text", criteria_text),
-                        )
-                        logger.info("Evaluation stored: total_score=%.1f, grade=%s",
-                                    result.content_analysis.evaluation.total_score,
-                                    result.content_analysis.evaluation.grade)
-                    except Exception as e:
-                        logger.error("Failed to store evaluation result: %s", e)
-
-            # 8. 技术质量评估
-            result.technical_quality = self._assess_technical_quality(metadata, audio_features)
-
-            # 9. 完成
-            completed_at = datetime.now(timezone.utc)
-            result.status = VideoTaskStatus.COMPLETED
-            result.progress = 100
-            result.completed_at = completed_at.isoformat()
-            result.processing_time_ms = int((completed_at - started_at).total_seconds() * 1000)
-
-            update_progress(VideoTaskStatus.COMPLETED, 100, "分析完成")
-
-            # 清理音频文件
-            if audio_path and Path(audio_path).exists():
-                Path(audio_path).unlink(missing_ok=True)
-
-            return result
-
-        except Exception as e:
-            logger.exception("Video analysis failed")
-            result.status = VideoTaskStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.now(timezone.utc).isoformat()
-            update_progress(VideoTaskStatus.FAILED, 0, f"处理失败: {e}")
-            return result
+        return result
 
     def _assess_technical_quality(
         self,
