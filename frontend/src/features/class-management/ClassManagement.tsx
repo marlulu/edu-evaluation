@@ -26,6 +26,7 @@ import {
   Space,
   Statistic,
   Table,
+  Tabs,
   Tag,
   Typography,
   Upload,
@@ -67,7 +68,16 @@ const fileTypeIconMap: Record<string, React.ReactNode> = {
   document: <FileTextOutlined style={{ color: '#fa8c16' }} />,
 };
 
-type ViewMode = 'classes' | 'students' | 'student-detail';
+interface TabItem {
+  key: string;
+  label: string;
+  type: 'classes' | 'students' | 'student-detail';
+  classId?: string;
+  className?: string;
+  studentId?: string;
+  studentName?: string;
+  studentNumber?: string;
+}
 
 export function ClassManagement() {
   const [messageApi, contextHolder] = message.useMessage();
@@ -75,8 +85,13 @@ export function ClassManagement() {
   const [students, setStudents] = useState<StudentInfo[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<StudentInfo | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('classes');
   const [loading, setLoading] = useState(false);
+
+  // Tab 相关状态
+  const [activeTab, setActiveTab] = useState<string>('classes');
+  const [tabs, setTabs] = useState<TabItem[]>([
+    { key: 'classes', label: '班级管理', type: 'classes' }
+  ]);
 
   // 模态框状态
   const [classModalOpen, setClassModalOpen] = useState(false);
@@ -158,28 +173,116 @@ export function ClassManagement() {
     loadClasses();
   }, [loadClasses]);
 
-  // 切换到学生列表
+  // 打开学生列表 Tab
   const handleViewStudents = (cls: ClassInfo) => {
+    const tabKey = `class-${cls.classId}`;
+
+    // 如果 tab 已存在，直接切换
+    if (tabs.some(tab => tab.key === tabKey)) {
+      setActiveTab(tabKey);
+      setSelectedClass(cls);
+      loadStudents(cls.classId);
+      return;
+    }
+
+    // 添加新 tab
+    const newTab: TabItem = {
+      key: tabKey,
+      label: cls.className,
+      type: 'students',
+      classId: cls.classId,
+      className: cls.className,
+    };
+    setTabs(prev => [...prev, newTab]);
+    setActiveTab(tabKey);
     setSelectedClass(cls);
-    setViewMode('students');
     loadStudents(cls.classId);
   };
 
-  // 切换到学生详情
+  // 打开学生详情 Tab
   const handleViewStudentDetail = (student: StudentInfo) => {
-    setViewMode('student-detail');
+    const tabKey = `student-${student.studentId}`;
+
+    // 如果 tab 已存在，直接切换
+    if (tabs.some(tab => tab.key === tabKey)) {
+      setActiveTab(tabKey);
+      loadStudentDetail(student.studentId);
+      return;
+    }
+
+    // 添加新 tab
+    const newTab: TabItem = {
+      key: tabKey,
+      label: student.studentName,
+      type: 'student-detail',
+      studentId: student.studentId,
+      studentName: student.studentName,
+      studentNumber: student.studentNumber,
+    };
+    setTabs(prev => [...prev, newTab]);
+    setActiveTab(tabKey);
     loadStudentDetail(student.studentId);
+  };
+
+  // 关闭 Tab
+  const handleCloseTab = (targetKey: string) => {
+    const newTabs = tabs.filter(tab => tab.key !== targetKey);
+    setTabs(newTabs);
+
+    // 如果关闭的是当前 tab，切换到最后一个 tab
+    if (activeTab === targetKey) {
+      const lastTab = newTabs[newTabs.length - 1];
+      if (lastTab) {
+        setActiveTab(lastTab.key);
+        // 加载对应的数据
+        if (lastTab.type === 'classes') {
+          setSelectedClass(null);
+          setSelectedStudent(null);
+        } else if (lastTab.type === 'students' && lastTab.classId) {
+          setSelectedStudent(null);
+          const cls = classes.find(c => c.classId === lastTab.classId);
+          if (cls) {
+            setSelectedClass(cls);
+            loadStudents(lastTab.classId);
+          }
+        } else if (lastTab.type === 'student-detail' && lastTab.studentId) {
+          loadStudentDetail(lastTab.studentId);
+        }
+      }
+    }
+  };
+
+  // 处理 tab 切换
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+    const tab = tabs.find(t => t.key === key);
+
+    if (tab) {
+      if (tab.type === 'classes') {
+        setSelectedClass(null);
+        setSelectedStudent(null);
+      } else if (tab.type === 'students' && tab.classId) {
+        setSelectedStudent(null);
+        const cls = classes.find(c => c.classId === tab.classId);
+        if (cls) {
+          setSelectedClass(cls);
+          loadStudents(tab.classId);
+        }
+      } else if (tab.type === 'student-detail' && tab.studentId) {
+        loadStudentDetail(tab.studentId);
+      }
+    }
   };
 
   // 返回上级
   const handleBack = () => {
-    if (viewMode === 'student-detail') {
-      setViewMode('students');
-      setSelectedStudent(null);
-    } else if (viewMode === 'students') {
-      setViewMode('classes');
-      setSelectedClass(null);
-      setStudents([]);
+    const currentTab = tabs.find(t => t.key === activeTab);
+    if (currentTab?.type === 'student-detail') {
+      // 关闭当前学生详情 tab，切换到学生列表
+      handleCloseTab(activeTab);
+    } else if (currentTab?.type === 'students') {
+      // 关闭当前学生列表 tab，切换到班级管理
+      handleCloseTab(activeTab);
     }
   };
 
@@ -209,6 +312,8 @@ export function ClassManagement() {
       await deleteClass(classId);
       messageApi.success('班级删除成功');
       loadClasses();
+      // 关闭对应的 tab
+      handleCloseTab(`class-${classId}`);
     } catch (error) {
       messageApi.error('删除失败');
     }
@@ -245,6 +350,8 @@ export function ClassManagement() {
       if (selectedClass) {
         loadStudents(selectedClass.classId);
       }
+      // 关闭对应的 tab
+      handleCloseTab(`student-${studentId}`);
     } catch (error) {
       messageApi.error('删除失败');
     }
@@ -457,8 +564,6 @@ export function ClassManagement() {
     <Card
       title={
         <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={handleBack} />
-          <Divider type="vertical" />
           <UserOutlined />
           <span>{selectedClass?.className} - 学生管理</span>
         </Space>
@@ -553,8 +658,6 @@ export function ClassManagement() {
       <Card
         title={
           <Space>
-            <Button icon={<ArrowLeftOutlined />} onClick={handleBack} />
-            <Divider type="vertical" />
             <UserOutlined />
             <span>{selectedStudent?.studentName} - 作品管理</span>
             {selectedStudent?.studentNumber && (
@@ -700,13 +803,53 @@ export function ClassManagement() {
     );
   };
 
+  // 渲染当前 tab 内容
+  const renderTabContent = () => {
+    const currentTab = tabs.find(t => t.key === activeTab);
+    if (!currentTab) return null;
+
+    switch (currentTab.type) {
+      case 'classes':
+        return renderClassList();
+      case 'students':
+        return renderStudentList();
+      case 'student-detail':
+        return renderStudentDetail();
+      default:
+        return null;
+    }
+  };
+
   return (
     <div style={{ padding: 0 }}>
       {contextHolder}
 
-      {viewMode === 'classes' && renderClassList()}
-      {viewMode === 'students' && renderStudentList()}
-      {viewMode === 'student-detail' && renderStudentDetail()}
+      <Tabs
+        type="editable-card"
+        activeKey={activeTab}
+        onChange={handleTabChange}
+        onEdit={(targetKey, action) => {
+          if (action === 'remove') {
+            handleCloseTab(targetKey as string);
+          }
+        }}
+        hideAdd
+        items={tabs.map(tab => ({
+          key: tab.key,
+          label: (
+            <span>
+              {tab.type === 'classes' && <TeamOutlined style={{ marginRight: 4 }} />}
+              {tab.type === 'students' && <TeamOutlined style={{ marginRight: 4 }} />}
+              {tab.type === 'student-detail' && <UserOutlined style={{ marginRight: 4 }} />}
+              {tab.label}
+            </span>
+          ),
+          children: renderTabContent(),
+          closable: tab.key !== 'classes',
+        }))}
+        style={{ marginBottom: 0 }}
+        tabBarStyle={{ marginBottom: 0, paddingLeft: 16, background: '#fff' }}
+      />
 
       {/* 班级编辑模态框 */}
       <Modal
