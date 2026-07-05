@@ -1,6 +1,5 @@
 import {
   ArrowLeftOutlined,
-  CloseOutlined,
   DeleteOutlined,
   EditOutlined,
   FileOutlined,
@@ -27,7 +26,6 @@ import {
   Space,
   Statistic,
   Table,
-  Tabs,
   Tag,
   Typography,
   Upload,
@@ -69,24 +67,16 @@ const fileTypeIconMap: Record<string, React.ReactNode> = {
   document: <FileTextOutlined style={{ color: '#fa8c16' }} />,
 };
 
-interface StudentTab {
-  key: string;
-  studentId: string;
-  studentName: string;
-  studentNumber?: string;
-}
+type ViewMode = 'classes' | 'students' | 'student-detail';
 
 export function ClassManagement() {
   const [messageApi, contextHolder] = message.useMessage();
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [students, setStudents] = useState<StudentInfo[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // Tab 相关状态
-  const [activeTab, setActiveTab] = useState<string>('classes');
-  const [studentTabs, setStudentTabs] = useState<StudentTab[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<StudentInfo | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('classes');
+  const [loading, setLoading] = useState(false);
 
   // 模态框状态
   const [classModalOpen, setClassModalOpen] = useState(false);
@@ -171,52 +161,26 @@ export function ClassManagement() {
   // 切换到学生列表
   const handleViewStudents = (cls: ClassInfo) => {
     setSelectedClass(cls);
-    setActiveTab('students');
+    setViewMode('students');
     loadStudents(cls.classId);
   };
 
-  // 打开学生详情 Tab
-  const handleOpenStudentTab = (student: StudentInfo) => {
-    const tabKey = `student-${student.studentId}`;
-
-    // 如果 tab 已存在，直接切换
-    if (studentTabs.some(tab => tab.key === tabKey)) {
-      setActiveTab(tabKey);
-      loadStudentDetail(student.studentId);
-      return;
-    }
-
-    // 添加新 tab
-    const newTab: StudentTab = {
-      key: tabKey,
-      studentId: student.studentId,
-      studentName: student.studentName,
-      studentNumber: student.studentNumber,
-    };
-    setStudentTabs(prev => [...prev, newTab]);
-    setActiveTab(tabKey);
+  // 切换到学生详情
+  const handleViewStudentDetail = (student: StudentInfo) => {
+    setViewMode('student-detail');
     loadStudentDetail(student.studentId);
   };
 
-  // 关闭学生 Tab
-  const handleCloseStudentTab = (targetKey: string) => {
-    const newTabs = studentTabs.filter(tab => tab.key !== targetKey);
-    setStudentTabs(newTabs);
-
-    // 如果关闭的是当前 tab，切换到学生列表
-    if (activeTab === targetKey) {
-      setActiveTab('students');
+  // 返回上级
+  const handleBack = () => {
+    if (viewMode === 'student-detail') {
+      setViewMode('students');
       setSelectedStudent(null);
+    } else if (viewMode === 'students') {
+      setViewMode('classes');
+      setSelectedClass(null);
+      setStudents([]);
     }
-  };
-
-  // 返回班级列表
-  const handleBackToClasses = () => {
-    setActiveTab('classes');
-    setSelectedClass(null);
-    setStudents([]);
-    setSelectedStudent(null);
-    setStudentTabs([]);
   };
 
   // 创建/编辑班级
@@ -281,8 +245,6 @@ export function ClassManagement() {
       if (selectedClass) {
         loadStudents(selectedClass.classId);
       }
-      // 关闭对应的 tab
-      handleCloseStudentTab(`student-${studentId}`);
     } catch (error) {
       messageApi.error('删除失败');
     }
@@ -495,7 +457,7 @@ export function ClassManagement() {
     <Card
       title={
         <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={handleBackToClasses} />
+          <Button icon={<ArrowLeftOutlined />} onClick={handleBack} />
           <Divider type="vertical" />
           <UserOutlined />
           <span>{selectedClass?.className} - 学生管理</span>
@@ -547,7 +509,7 @@ export function ClassManagement() {
                   ghost
                   size="small"
                   icon={<FileOutlined />}
-                  onClick={() => handleOpenStudentTab(record)}
+                  onClick={() => handleViewStudentDetail(record)}
                 >
                   查看作品
                 </Button>
@@ -588,7 +550,39 @@ export function ClassManagement() {
     const analyzingWorks = works.filter(w => !['completed', 'failed'].includes(w.status)).length;
 
     return (
-      <div>
+      <Card
+        title={
+          <Space>
+            <Button icon={<ArrowLeftOutlined />} onClick={handleBack} />
+            <Divider type="vertical" />
+            <UserOutlined />
+            <span>{selectedStudent?.studentName} - 作品管理</span>
+            {selectedStudent?.studentNumber && (
+              <Tag>{selectedStudent.studentNumber}</Tag>
+            )}
+          </Space>
+        }
+        extra={
+          <Space>
+            <Button
+              type="primary"
+              icon={<UploadOutlined />}
+              onClick={() => setUploadModalOpen(true)}
+            >
+              上传并分析
+            </Button>
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() => {
+                loadAvailableWorks();
+                setWorkModalOpen(true);
+              }}
+            >
+              关联已有作品
+            </Button>
+          </Space>
+        }
+      >
         {/* 统计卡片 */}
         <Row gutter={16} style={{ marginBottom: 16 }}>
           <Col span={8}>
@@ -621,200 +615,98 @@ export function ClassManagement() {
         </Row>
 
         {/* 作品列表 */}
-        <Card
+        <Table
+          columns={[
+            {
+              title: '作品名称',
+              dataIndex: 'fileName',
+              key: 'fileName',
+              render: (text: string, record: WorkInfo) => (
+                <Space>
+                  {fileTypeIconMap[record.fileType || ''] || <FileOutlined />}
+                  <Text>{text}</Text>
+                </Space>
+              ),
+            },
+            {
+              title: '文件类型',
+              dataIndex: 'fileType',
+              key: 'fileType',
+              width: 100,
+              render: (type: string) => (
+                <Tag color={FILE_TYPE_COLORS[type as keyof typeof FILE_TYPE_COLORS] || 'default'}>
+                  {FILE_TYPE_LABELS[type as keyof typeof FILE_TYPE_LABELS] || type || '未知'}
+                </Tag>
+              ),
+            },
+            {
+              title: '分析状态',
+              dataIndex: 'status',
+              key: 'status',
+              width: 120,
+              render: (status: string) => {
+                const statusMap: Record<string, { color: string; text: string }> = {
+                  completed: { color: 'success', text: '已完成' },
+                  failed: { color: 'error', text: '失败' },
+                  pending: { color: 'default', text: '等待中' },
+                  preprocessing: { color: 'processing', text: '预处理' },
+                  extracting_metadata: { color: 'processing', text: '提取元数据' },
+                  extracting_keyframes: { color: 'processing', text: '提取关键帧' },
+                  extracting_audio: { color: 'processing', text: '提取音频' },
+                  transcribing: { color: 'processing', text: '语音识别' },
+                  analyzing_content: { color: 'processing', text: '内容分析' },
+                };
+                const info = statusMap[status] || { color: 'default', text: status };
+                return <Tag color={info.color}>{info.text}</Tag>;
+              },
+            },
+            {
+              title: '进度',
+              dataIndex: 'progress',
+              key: 'progress',
+              width: 120,
+              render: (progress: number, record: WorkInfo) => (
+                <Progress
+                  percent={Math.round(progress || 0)}
+                  size="small"
+                  status={record.status === 'failed' ? 'exception' : undefined}
+                />
+              ),
+            },
+            {
+              title: '操作',
+              key: 'action',
+              width: 100,
+              render: (_: unknown, record: WorkInfo) => (
+                <Popconfirm
+                  title="确定取消关联此作品？"
+                  onConfirm={() => handleRemoveWork(record.taskId)}
+                >
+                  <Button size="small" danger icon={<DeleteOutlined />}>
+                    取消关联
+                  </Button>
+                </Popconfirm>
+              ),
+            },
+          ]}
+          dataSource={works}
+          rowKey="taskId"
+          loading={loading}
+          locale={{ emptyText: <Empty description="暂无作品，点击右上角上传或关联" /> }}
+          pagination={works.length > 10 ? { pageSize: 10 } : false}
           size="small"
-          title={
-            <Space>
-              <FileOutlined />
-              <span>作品列表</span>
-            </Space>
-          }
-          extra={
-            <Space>
-              <Button
-                type="primary"
-                size="small"
-                icon={<UploadOutlined />}
-                onClick={() => setUploadModalOpen(true)}
-              >
-                上传并分析
-              </Button>
-              <Button
-                size="small"
-                icon={<PlusOutlined />}
-                onClick={() => {
-                  loadAvailableWorks();
-                  setWorkModalOpen(true);
-                }}
-              >
-                关联已有作品
-              </Button>
-            </Space>
-          }
-        >
-          <Table
-            columns={[
-              {
-                title: '作品名称',
-                dataIndex: 'fileName',
-                key: 'fileName',
-                render: (text: string, record: WorkInfo) => (
-                  <Space>
-                    {fileTypeIconMap[record.fileType || ''] || <FileOutlined />}
-                    <Text>{text}</Text>
-                  </Space>
-                ),
-              },
-              {
-                title: '文件类型',
-                dataIndex: 'fileType',
-                key: 'fileType',
-                width: 100,
-                render: (type: string) => (
-                  <Tag color={FILE_TYPE_COLORS[type as keyof typeof FILE_TYPE_COLORS] || 'default'}>
-                    {FILE_TYPE_LABELS[type as keyof typeof FILE_TYPE_LABELS] || type || '未知'}
-                  </Tag>
-                ),
-              },
-              {
-                title: '分析状态',
-                dataIndex: 'status',
-                key: 'status',
-                width: 120,
-                render: (status: string) => {
-                  const statusMap: Record<string, { color: string; text: string }> = {
-                    completed: { color: 'success', text: '已完成' },
-                    failed: { color: 'error', text: '失败' },
-                    pending: { color: 'default', text: '等待中' },
-                    preprocessing: { color: 'processing', text: '预处理' },
-                    extracting_metadata: { color: 'processing', text: '提取元数据' },
-                    extracting_keyframes: { color: 'processing', text: '提取关键帧' },
-                    extracting_audio: { color: 'processing', text: '提取音频' },
-                    transcribing: { color: 'processing', text: '语音识别' },
-                    analyzing_content: { color: 'processing', text: '内容分析' },
-                  };
-                  const info = statusMap[status] || { color: 'default', text: status };
-                  return <Tag color={info.color}>{info.text}</Tag>;
-                },
-              },
-              {
-                title: '进度',
-                dataIndex: 'progress',
-                key: 'progress',
-                width: 120,
-                render: (progress: number, record: WorkInfo) => (
-                  <Progress
-                    percent={Math.round(progress || 0)}
-                    size="small"
-                    status={record.status === 'failed' ? 'exception' : undefined}
-                  />
-                ),
-              },
-              {
-                title: '操作',
-                key: 'action',
-                width: 100,
-                render: (_: unknown, record: WorkInfo) => (
-                  <Popconfirm
-                    title="确定取消关联此作品？"
-                    onConfirm={() => handleRemoveWork(record.taskId)}
-                  >
-                    <Button size="small" danger icon={<DeleteOutlined />}>
-                      取消关联
-                    </Button>
-                  </Popconfirm>
-                ),
-              },
-            ]}
-            dataSource={works}
-            rowKey="taskId"
-            loading={loading}
-            locale={{ emptyText: <Empty description="暂无作品" /> }}
-            pagination={works.length > 10 ? { pageSize: 10 } : false}
-            size="small"
-          />
-        </Card>
-      </div>
+        />
+      </Card>
     );
-  };
-
-  // 构建 tab 项
-  const tabItems = [
-    {
-      key: 'classes',
-      label: (
-        <span>
-          <TeamOutlined />
-          班级管理
-        </span>
-      ),
-      children: renderClassList(),
-      closable: false,
-    },
-    ...(selectedClass
-      ? [
-          {
-            key: 'students',
-            label: (
-              <span>
-                <UserOutlined />
-                {selectedClass.className} - 学生
-              </span>
-            ),
-            children: renderStudentList(),
-            closable: false,
-          },
-        ]
-      : []),
-    ...studentTabs.map(tab => ({
-      key: tab.key,
-      label: (
-        <span>
-          <FileOutlined />
-          {tab.studentName}
-          {tab.studentNumber && <Tag style={{ marginLeft: 4 }}>{tab.studentNumber}</Tag>}
-        </span>
-      ),
-      children: renderStudentDetail(),
-      closable: true,
-    })),
-  ];
-
-  // 处理 tab 切换
-  const handleTabChange = (key: string) => {
-    setActiveTab(key);
-
-    if (key === 'classes') {
-      setSelectedStudent(null);
-    } else if (key === 'students') {
-      setSelectedStudent(null);
-    } else if (key.startsWith('student-')) {
-      const studentId = key.replace('student-', '');
-      loadStudentDetail(studentId);
-    }
-  };
-
-  // 处理 tab 关闭
-  const handleTabEdit = (targetKey: any, action: 'add' | 'remove') => {
-    if (action === 'remove') {
-      handleCloseStudentTab(targetKey as string);
-    }
   };
 
   return (
     <div style={{ padding: 0 }}>
       {contextHolder}
 
-      <Tabs
-        type="editable-card"
-        activeKey={activeTab}
-        onChange={handleTabChange}
-        onEdit={handleTabEdit}
-        hideAdd
-        items={tabItems}
-        style={{ marginBottom: 0 }}
-        tabBarStyle={{ marginBottom: 0, paddingLeft: 16, background: '#fff' }}
-      />
+      {viewMode === 'classes' && renderClassList()}
+      {viewMode === 'students' && renderStudentList()}
+      {viewMode === 'student-detail' && renderStudentDetail()}
 
       {/* 班级编辑模态框 */}
       <Modal
