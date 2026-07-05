@@ -50,11 +50,31 @@ CREATE TABLE IF NOT EXISTS student_works (
     id VARCHAR(36) PRIMARY KEY,
     student_id VARCHAR(36) NOT NULL,
     task_id VARCHAR(36) NOT NULL,
+    assignment_id VARCHAR(36) COMMENT '关联的作业任务ID',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
     FOREIGN KEY (task_id) REFERENCES work_tasks(task_id) ON DELETE CASCADE,
     INDEX idx_student_id (student_id),
-    INDEX idx_task_id (task_id)
+    INDEX idx_task_id (task_id),
+    INDEX idx_assignment_id (assignment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 作业任务表
+CREATE TABLE IF NOT EXISTS assignments (
+    assignment_id VARCHAR(36) PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    criteria_text TEXT COMMENT '评判标准文本',
+    criteria_file_name VARCHAR(500) COMMENT '评判标准文件名',
+    class_id VARCHAR(36) COMMENT '关联班级ID，为空表示所有班级',
+    deadline DATETIME COMMENT '截止时间',
+    status VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active, closed',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (class_id) REFERENCES classes(class_id) ON DELETE SET NULL,
+    INDEX idx_class_id (class_id),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 创建只读用户（用于报表查询，可选）

@@ -23,6 +23,7 @@ import {
   Popconfirm,
   Progress,
   Row,
+  Select,
   Space,
   Statistic,
   Table,
@@ -58,6 +59,10 @@ import {
   FILE_TYPE_LABELS,
   FILE_TYPE_COLORS,
 } from '../work-analysis/api';
+import {
+  type AssignmentInfo,
+  listAssignments,
+} from '../assignment-management/api';
 
 const { Text } = Typography;
 
@@ -83,6 +88,7 @@ export function ClassManagement() {
   const [messageApi, contextHolder] = message.useMessage();
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [students, setStudents] = useState<StudentInfo[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentInfo[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<StudentInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,8 +115,9 @@ export function ClassManagement() {
   // 可选作品列表
   const [availableWorks, setAvailableWorks] = useState<Array<{ taskId: string; fileName: string; fileType?: string }>>([]);
 
-  // 上传文件
+  // 上传文件和选择任务
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | undefined>(undefined);
 
   // 表单
   const [classForm] = Form.useForm();
@@ -169,15 +176,25 @@ export function ClassManagement() {
     }
   }, []);
 
+  // 加载任务列表
+  const loadAssignments = useCallback(async () => {
+    try {
+      const result = await listAssignments(undefined, 'active');
+      setAssignments(result.assignments);
+    } catch (error) {
+      console.error('加载任务列表失败:', error);
+    }
+  }, []);
+
   useEffect(() => {
     loadClasses();
-  }, [loadClasses]);
+    loadAssignments();
+  }, [loadClasses, loadAssignments]);
 
   // 打开学生列表 Tab
   const handleViewStudents = (cls: ClassInfo) => {
     const tabKey = `class-${cls.classId}`;
 
-    // 如果 tab 已存在，直接切换
     if (tabs.some(tab => tab.key === tabKey)) {
       setActiveTab(tabKey);
       setSelectedClass(cls);
@@ -185,7 +202,6 @@ export function ClassManagement() {
       return;
     }
 
-    // 添加新 tab
     const newTab: TabItem = {
       key: tabKey,
       label: cls.className,
@@ -203,14 +219,12 @@ export function ClassManagement() {
   const handleViewStudentDetail = (student: StudentInfo) => {
     const tabKey = `student-${student.studentId}`;
 
-    // 如果 tab 已存在，直接切换
     if (tabs.some(tab => tab.key === tabKey)) {
       setActiveTab(tabKey);
       loadStudentDetail(student.studentId);
       return;
     }
 
-    // 添加新 tab
     const newTab: TabItem = {
       key: tabKey,
       label: student.studentName,
@@ -229,12 +243,10 @@ export function ClassManagement() {
     const newTabs = tabs.filter(tab => tab.key !== targetKey);
     setTabs(newTabs);
 
-    // 如果关闭的是当前 tab，切换到最后一个 tab
     if (activeTab === targetKey) {
       const lastTab = newTabs[newTabs.length - 1];
       if (lastTab) {
         setActiveTab(lastTab.key);
-        // 加载对应的数据
         if (lastTab.type === 'classes') {
           setSelectedClass(null);
           setSelectedStudent(null);
@@ -274,18 +286,6 @@ export function ClassManagement() {
     }
   };
 
-  // 返回上级
-  const handleBack = () => {
-    const currentTab = tabs.find(t => t.key === activeTab);
-    if (currentTab?.type === 'student-detail') {
-      // 关闭当前学生详情 tab，切换到学生列表
-      handleCloseTab(activeTab);
-    } else if (currentTab?.type === 'students') {
-      // 关闭当前学生列表 tab，切换到班级管理
-      handleCloseTab(activeTab);
-    }
-  };
-
   // 创建/编辑班级
   const handleClassSubmit = async () => {
     try {
@@ -312,7 +312,6 @@ export function ClassManagement() {
       await deleteClass(classId);
       messageApi.success('班级删除成功');
       loadClasses();
-      // 关闭对应的 tab
       handleCloseTab(`class-${classId}`);
     } catch (error) {
       messageApi.error('删除失败');
@@ -350,7 +349,6 @@ export function ClassManagement() {
       if (selectedClass) {
         loadStudents(selectedClass.classId);
       }
-      // 关闭对应的 tab
       handleCloseTab(`student-${studentId}`);
     } catch (error) {
       messageApi.error('删除失败');
@@ -385,6 +383,10 @@ export function ClassManagement() {
   // 上传并分析作品
   const handleUploadAndAnalyze = async () => {
     if (!uploadFile || !selectedStudent) return;
+    if (!selectedAssignmentId) {
+      messageApi.error('请选择任务');
+      return;
+    }
 
     setAnalyzing(true);
     setAnalysisProgress(0);
@@ -399,11 +401,16 @@ export function ClassManagement() {
       setAnalysisProgress(20);
       setAnalysisStatus('文件上传成功，开始分析...');
 
+      // 获取任务的评判标准
+      const assignment = assignments.find(a => a.assignmentId === selectedAssignmentId);
+      const criteriaText = assignment?.criteriaText;
+
       const fileType = getFileType(uploadFile.name);
       const analyzeResult = await analyzeWorkAsync({
         fileName: uploadFile.name,
         filePath: uploadResult.filePath,
         fileType: fileType,
+        criteriaText: criteriaText,
       });
 
       setAnalysisProgress(40);
@@ -432,6 +439,7 @@ export function ClassManagement() {
             loadStudentDetail(selectedStudent.studentId);
             setUploadModalOpen(false);
             setUploadFile(null);
+            setSelectedAssignmentId(undefined);
             break;
           } else if (status.status === 'failed') {
             throw new Error(status.error || '分析失败');
@@ -911,19 +919,21 @@ export function ClassManagement() {
           if (!analyzing) {
             setUploadModalOpen(false);
             setUploadFile(null);
+            setSelectedAssignmentId(undefined);
           }
         }}
         footer={analyzing ? null : [
           <Button key="cancel" onClick={() => {
             setUploadModalOpen(false);
             setUploadFile(null);
+            setSelectedAssignmentId(undefined);
           }}>
             取消
           </Button>,
           <Button
             key="submit"
             type="primary"
-            disabled={!uploadFile}
+            disabled={!uploadFile || !selectedAssignmentId}
             loading={analyzing}
             onClick={handleUploadAndAnalyze}
           >
@@ -944,6 +954,23 @@ export function ClassManagement() {
           </div>
         ) : (
           <div>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>选择任务：</Text>
+              <Select
+                placeholder="请选择任务"
+                style={{ width: '100%', marginTop: 8 }}
+                value={selectedAssignmentId}
+                onChange={setSelectedAssignmentId}
+              >
+                {assignments.map(a => (
+                  <Select.Option key={a.assignmentId} value={a.assignmentId}>
+                    {a.title}
+                    {a.criteriaText ? <Tag color="success" style={{ marginLeft: 8 }}>有评判标准</Tag> : null}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+
             <Upload.Dragger
               beforeUpload={(file) => {
                 setUploadFile(file);

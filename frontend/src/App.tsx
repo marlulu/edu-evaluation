@@ -2,6 +2,7 @@ import {
   BookOutlined,
   FileOutlined,
   LogoutOutlined,
+  ScheduleOutlined,
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons';
@@ -11,12 +12,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { LoginPage, type LoginProfile, type UserRole } from './features/auth/LoginPage';
 import { WorkAnalysis } from './features/work-analysis/WorkAnalysis';
 import { ClassManagement } from './features/class-management/ClassManagement';
+import { AssignmentManagement } from './features/assignment-management/AssignmentManagement';
 
 const { Header, Sider, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
 
 type SessionUser = LoginProfile;
-type ModuleKey = 'dashboard' | 'work' | 'class';
+type ModuleKey = 'dashboard' | 'work' | 'assignment' | 'class';
 
 const SESSION_KEY = 'edu-evaluation-session';
 
@@ -33,9 +35,9 @@ const roleLabel: Record<UserRole, string> = {
 };
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
-  ADMIN: ['dashboard', 'work', 'class'],
-  TEACHER: ['dashboard', 'work', 'class'],
-  ASSISTANT: ['dashboard', 'class'],
+  ADMIN: ['dashboard', 'assignment', 'work', 'class'],
+  TEACHER: ['dashboard', 'assignment', 'work', 'class'],
+  ASSISTANT: ['dashboard', 'assignment', 'class'],
   STUDENT: ['dashboard']
 };
 
@@ -44,6 +46,7 @@ const moduleMeta: Record<
   { label: string; icon: ReactNode; description: string }
 > = {
   dashboard: { label: '工作台', icon: <BookOutlined />, description: '查看当前角色下的工作入口和模块概览。' },
+  assignment: { label: '布置任务', icon: <ScheduleOutlined />, description: '布置作业任务，设置评判标准。' },
   work: { label: '作品分析', icon: <FileOutlined />, description: '上传作品进行元数据提取、语音识别、内容分析和评判标准评分。' },
   class: { label: '班级管理', icon: <TeamOutlined />, description: '管理班级和学生，查看学生作品分析结果。' }
 };
@@ -164,6 +167,7 @@ export default function App() {
             {activeModule === 'dashboard' && (
               <Dashboard user={sessionUser} visibleModules={visibleModules} onSelect={setActiveModule} />
             )}
+            {activeModule === 'assignment' && <AssignmentManagement />}
             {activeModule === 'work' && <WorkAnalysis />}
             {activeModule === 'class' && <ClassManagement />}
           </Content>
