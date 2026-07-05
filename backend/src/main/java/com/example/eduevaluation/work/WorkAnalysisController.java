@@ -176,10 +176,12 @@ public class WorkAnalysisController {
             if (body != null) {
                 String taskId = (String) body.get("task_id");
                 String fileName = (String) request.getOrDefault("fileName", request.getOrDefault("file_name", "unknown"));
+                String filePath = (String) request.getOrDefault("filePath", request.getOrDefault("file_path", ""));
+                String fileType = getFileType(fileName);
 
                 // 在 MySQL 创建记录
-                taskService.saveTask(taskId, fileName, "pending", 0, null);
-                log.info("Task {} saved to MySQL", taskId);
+                taskService.saveTask(taskId, fileName, fileType, "pending", 0, null);
+                log.info("Task {} saved to MySQL, fileType: {}", taskId, fileType);
             }
 
             return response;
@@ -247,7 +249,8 @@ public class WorkAnalysisController {
                         if ("completed".equals(status) || "failed".equals(status)) {
                             try {
                                 String resultJson = objectMapper.writeValueAsString(aiTask);
-                                taskService.saveTask(summary.getTaskId(), summary.getFileName(), status, progress, resultJson);
+                                String fileType = getFileType(summary.getFileName());
+                                taskService.saveTask(summary.getTaskId(), summary.getFileName(), fileType, status, progress, resultJson);
                             } catch (Exception e) {
                                 log.error("Failed to serialize task result", e);
                             }
@@ -399,10 +402,11 @@ public class WorkAnalysisController {
             String fileName = (String) body.getOrDefault("file_name", body.getOrDefault("fileName", "unknown"));
             String status = (String) body.get("status");
             double progress = body.get("progress") != null ? ((Number) body.get("progress")).doubleValue() : 0;
+            String fileType = getFileType(fileName);
 
             String resultJson = objectMapper.writeValueAsString(body);
-            taskService.saveTask(taskId, fileName, status, progress, resultJson);
-            log.info("Task {} result saved to MySQL ({} chars)", taskId, resultJson.length());
+            taskService.saveTask(taskId, fileName, fileType, status, progress, resultJson);
+            log.info("Task {} result saved to MySQL ({} chars), fileType: {}", taskId, resultJson.length(), fileType);
         } catch (Exception e) {
             log.error("Failed to save task result to MySQL", e);
         }

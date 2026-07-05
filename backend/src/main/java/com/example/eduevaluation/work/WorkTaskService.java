@@ -22,7 +22,7 @@ public class WorkTaskService {
     }
 
     @Transactional
-    public WorkTaskEntity saveTask(String taskId, String fileName, String status, double progress, String resultJson) {
+    public WorkTaskEntity saveTask(String taskId, String fileName, String fileType, String status, double progress, String resultJson) {
         Optional<WorkTaskEntity> existing = repository.findById(taskId);
         WorkTaskEntity entity;
 
@@ -35,7 +35,7 @@ public class WorkTaskService {
                 entity.setResultJson(resultJson);
             }
         } else {
-            entity = new WorkTaskEntity(taskId, fileName, status, progress);
+            entity = new WorkTaskEntity(taskId, fileName, fileType, status, progress);
             entity.setResultJson(resultJson);
         }
 
