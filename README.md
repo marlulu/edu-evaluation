@@ -1,6 +1,6 @@
-# AI Coursework Evaluation System
+# AI 作品评估系统
 
-Framework scaffold for an "Introduction to Artificial Intelligence" coursework evaluation system.
+AI 作品评估系统，支持作品上传、元数据提取、语音识别、内容分析和质量评估。
 
 For a detailed description of the technology stack, local startup flow, validation commands, and deployment recommendations, see [docs/TECHNICAL_GUIDE.md](docs/TECHNICAL_GUIDE.md).
 
@@ -13,7 +13,7 @@ ai-worker/  Python FastAPI service for future extraction and AI evaluation
 infra/      Local MySQL, Redis, MinIO, and RabbitMQ Docker Compose setup
 ```
 
-The frontend calls the Spring Boot backend. The backend owns business APIs, persistence, file metadata, and orchestration. The AI Worker is a separate service reserved for document parsing, OCR/ASR, video processing, and LLM evaluation in later milestones.
+前端调用 Spring Boot 后端。后端负责业务 API、持久化、文件元数据和编排。AI Worker 是一个独立的服务，用于文档解析、OCR/ASR、作品处理和 LLM 评估。
 
 ## Current Scope
 
@@ -72,9 +72,9 @@ The multimodal content parsing module is still in design scope, but its detailed
 Planned parsing coverage includes:
 
 - image understanding, OCR, composition, sharpness, and color analysis
-- video metadata, keyframe extraction, shot segmentation, subtitle recognition, and theme recognition
+- work metadata, keyframe extraction, shot segmentation, subtitle recognition, and theme recognition
 - audio transcription, speech rate, volume, clarity, pause/rhythm, and expression analysis
-- multimodal fusion across image, video, audio, text, and archive submissions
+- multimodal fusion across image, work, audio, text, and archive submissions
 - supplementary document, subtitle, script, and archive unpacking workflows
 
 The current milestone now reserves AI Worker contracts for this module without binding any real model provider yet.

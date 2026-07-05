@@ -1,20 +1,20 @@
 import {
   BookOutlined,
+  FileOutlined,
   LogoutOutlined,
-  UserOutlined,
-  VideoCameraOutlined
+  UserOutlined
 } from '@ant-design/icons';
 import { Avatar, Button, Card, Layout, Menu, Space, Tag, Typography, message } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { LoginPage, type LoginProfile, type UserRole } from './features/auth/LoginPage';
-import { VideoAnalysis } from './features/video-analysis/VideoAnalysis';
+import { WorkAnalysis } from './features/work-analysis/WorkAnalysis';
 
 const { Header, Sider, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
 
 type SessionUser = LoginProfile;
-type ModuleKey = 'dashboard' | 'video';
+type ModuleKey = 'dashboard' | 'work';
 
 const SESSION_KEY = 'edu-evaluation-session';
 
@@ -31,8 +31,8 @@ const roleLabel: Record<UserRole, string> = {
 };
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
-  ADMIN: ['dashboard', 'video'],
-  TEACHER: ['dashboard', 'video'],
+  ADMIN: ['dashboard', 'work'],
+  TEACHER: ['dashboard', 'work'],
   ASSISTANT: ['dashboard'],
   STUDENT: ['dashboard']
 };
@@ -42,7 +42,7 @@ const moduleMeta: Record<
   { label: string; icon: ReactNode; description: string }
 > = {
   dashboard: { label: '工作台', icon: <BookOutlined />, description: '查看当前角色下的工作入口和模块概览。' },
-  video: { label: '视频分析', icon: <VideoCameraOutlined />, description: '上传视频进行元数据提取、语音识别、内容分析和评判标准评分。' }
+  work: { label: '作品分析', icon: <FileOutlined />, description: '上传作品进行元数据提取、语音识别、内容分析和评判标准评分。' }
 };
 
 export default function App() {
@@ -118,11 +118,11 @@ export default function App() {
       <Layout className="shell-layout">
         <Sider width={248} theme="light" className="shell-sider">
           <div className="brand-block">
-            <Tag color="processing">AI Video</Tag>
+            <Tag color="processing">AI Work</Tag>
             <Title level={4} className="brand-title">
-              视频分析系统
+              作品分析系统
             </Title>
-            <Text type="secondary">上传视频进行智能分析</Text>
+            <Text type="secondary">上传作品进行智能分析</Text>
           </div>
           <Menu
             mode="inline"
@@ -161,7 +161,7 @@ export default function App() {
             {activeModule === 'dashboard' && (
               <Dashboard user={sessionUser} visibleModules={visibleModules} onSelect={setActiveModule} />
             )}
-            {activeModule === 'video' && <VideoAnalysis />}
+            {activeModule === 'work' && <WorkAnalysis />}
           </Content>
         </Layout>
       </Layout>
@@ -187,7 +187,7 @@ function Dashboard({
             {user.displayName}，欢迎进入工作台
           </Title>
           <Paragraph type="secondary" className="detail-paragraph">
-            本系统专注于视频智能分析，支持视频上传、元数据提取、语音识别、内容分析和质量评估。
+            本系统专注于作品智能分析，支持作品上传、元数据提取、语音识别、内容分析和质量评估。
           </Paragraph>
         </Space>
       </Card>

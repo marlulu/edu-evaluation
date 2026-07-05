@@ -3,14 +3,14 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 
 from app.config import build_public_settings_view, get_settings, reload_settings
-from app.modules.video_analysis import router as video_analysis_router
+from app.modules.work_analysis import router as work_analysis_router
 
 app = FastAPI(
     title="AI Coursework Evaluation Worker",
     version="0.5.0",
     description="Framework shell for future extraction and AI evaluation jobs.",
 )
-app.include_router(video_analysis_router)
+app.include_router(work_analysis_router)
 
 
 @app.get("/health")
