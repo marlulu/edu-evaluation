@@ -23,6 +23,7 @@ RUN mvn package -DskipTests -B
 
 # ---- Production Stage ----
 FROM eclipse-temurin:17-jre-alpine
+RUN apk add --no-cache curl
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 # 由 docker-compose 注入环境变量

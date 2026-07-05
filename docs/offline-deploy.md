@@ -1,6 +1,31 @@
-# Docker 离线部署通用教程
+# 教育评估系统 — 离线部署指南
 
 适用于无法直接访问 Docker Hub / npm / Maven 的服务器环境（如国内服务器）。
+
+## 快速开始
+
+### 方式一：使用打包脚本（推荐）
+
+在有网络的机器上运行打包脚本：
+
+```bash
+# Linux/macOS
+bash deploy/scripts/offline-package.sh --all
+
+# Windows PowerShell
+.\deploy\scripts\offline-package.ps1 -All
+```
+
+脚本会自动：
+1. 拉取并打包所有 Docker 镜像
+2. 打包项目代码
+3. 生成离线部署脚本
+
+然后将生成的 `offline-package/edu-evaluation-offline-*` 目录上传到目标服务器即可。
+
+### 方式二：手动打包
+
+如果需要更精细的控制，可以按以下步骤手动操作。
 
 ---
 
