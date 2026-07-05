@@ -5,7 +5,7 @@ import {
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons';
-import { Avatar, Button, Card, Layout, Menu, Space, Tag, Typography, message } from 'antd';
+import { Avatar, Button, Card, Layout, Menu, Space, Tabs, Tag, Typography, message } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { LoginPage, type LoginProfile, type UserRole } from './features/auth/LoginPage';
@@ -16,7 +16,7 @@ const { Header, Sider, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
 
 type SessionUser = LoginProfile;
-type ModuleKey = 'dashboard' | 'work' | 'class';
+type ModuleKey = 'dashboard' | 'analysis';
 
 const SESSION_KEY = 'edu-evaluation-session';
 
@@ -33,9 +33,9 @@ const roleLabel: Record<UserRole, string> = {
 };
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
-  ADMIN: ['dashboard', 'work', 'class'],
-  TEACHER: ['dashboard', 'work', 'class'],
-  ASSISTANT: ['dashboard', 'class'],
+  ADMIN: ['dashboard', 'analysis'],
+  TEACHER: ['dashboard', 'analysis'],
+  ASSISTANT: ['dashboard', 'analysis'],
   STUDENT: ['dashboard']
 };
 
@@ -44,8 +44,7 @@ const moduleMeta: Record<
   { label: string; icon: ReactNode; description: string }
 > = {
   dashboard: { label: '工作台', icon: <BookOutlined />, description: '查看当前角色下的工作入口和模块概览。' },
-  work: { label: '作品分析', icon: <FileOutlined />, description: '上传作品进行元数据提取、语音识别、内容分析和评判标准评分。' },
-  class: { label: '班级管理', icon: <TeamOutlined />, description: '管理班级和学生，查看学生作品分析结果。' }
+  analysis: { label: '作品与班级', icon: <FileOutlined />, description: '上传作品进行分析，管理班级和学生。' }
 };
 
 export default function App() {
@@ -53,6 +52,7 @@ export default function App() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | undefined>();
   const [activeModule, setActiveModule] = useState<ModuleKey>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>('work');
 
   useEffect(() => {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -164,8 +164,36 @@ export default function App() {
             {activeModule === 'dashboard' && (
               <Dashboard user={sessionUser} visibleModules={visibleModules} onSelect={setActiveModule} />
             )}
-            {activeModule === 'work' && <WorkAnalysis />}
-            {activeModule === 'class' && <ClassManagement />}
+            {activeModule === 'analysis' && (
+              <Tabs
+                activeKey={activeTab}
+                onChange={setActiveTab}
+                type="card"
+                size="large"
+                items={[
+                  {
+                    key: 'work',
+                    label: (
+                      <span>
+                        <FileOutlined />
+                        作品分析
+                      </span>
+                    ),
+                    children: <WorkAnalysis />,
+                  },
+                  {
+                    key: 'class',
+                    label: (
+                      <span>
+                        <TeamOutlined />
+                        班级管理
+                      </span>
+                    ),
+                    children: <ClassManagement />,
+                  },
+                ]}
+              />
+            )}
           </Content>
         </Layout>
       </Layout>
