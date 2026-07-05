@@ -4,6 +4,7 @@ import {
   FileTextOutlined,
   LockOutlined,
   PlusOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -15,9 +16,11 @@ import {
   Popconfirm,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
   Typography,
+  Upload,
   message,
 } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
@@ -30,6 +33,7 @@ import {
   updateAssignment,
 } from './api';
 import { listClasses, type ClassInfo } from '../class-management/api';
+import { uploadCriteria, parseCriteriaFile } from '../work-analysis/api';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -43,6 +47,11 @@ export function AssignmentManagement() {
   // 模态框状态
   const [modalOpen, setModalOpen] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<AssignmentInfo | null>(null);
+
+  // 评判标准文件状态
+  const [criteriaFile, setCriteriaFile] = useState<File | undefined>();
+  const [criteriaText, setCriteriaText] = useState<string | undefined>();
+  const [criteriaParsing, setCriteriaParsing] = useState(false);
 
   // 表单
   const [form] = Form.useForm();
@@ -75,6 +84,32 @@ export function AssignmentManagement() {
     loadClasses();
   }, [loadAssignments, loadClasses]);
 
+  // 处理评判标准文件变化
+  const handleCriteriaFileChange = async (file: File | undefined) => {
+    setCriteriaFile(file);
+    setCriteriaText(undefined);
+    if (!file) return;
+
+    setCriteriaParsing(true);
+    try {
+      const uploadResult = await uploadCriteria(file);
+      if (uploadResult.success && uploadResult.filePath) {
+        const parseResult = await parseCriteriaFile(uploadResult.filePath);
+        if (parseResult.success && parseResult.text) {
+          setCriteriaText(parseResult.text);
+          form.setFieldsValue({ criteriaText: parseResult.text });
+        } else {
+          messageApi.warning('评判标准文件解析失败');
+        }
+      }
+    } catch (error) {
+      console.error('解析评判标准文件失败:', error);
+      messageApi.warning('评判标准文件解析失败');
+    } finally {
+      setCriteriaParsing(false);
+    }
+  };
+
   // 创建/编辑任务
   const handleSubmit = async () => {
     try {
@@ -98,6 +133,8 @@ export function AssignmentManagement() {
       setModalOpen(false);
       form.resetFields();
       setEditingAssignment(null);
+      setCriteriaFile(undefined);
+      setCriteriaText(undefined);
       loadAssignments();
     } catch (error) {
       messageApi.error('操作失败');
@@ -145,6 +182,28 @@ export function AssignmentManagement() {
     return new Date(deadline) < new Date();
   };
 
+  // 打开编辑模态框
+  const openEditModal = (record?: AssignmentInfo) => {
+    if (record) {
+      setEditingAssignment(record);
+      setCriteriaText(record.criteriaText);
+      setCriteriaFile(undefined);
+      form.setFieldsValue({
+        title: record.title,
+        description: record.description,
+        criteriaText: record.criteriaText,
+        classId: record.classId,
+        deadline: record.deadline ? new Date(record.deadline) : undefined,
+      });
+    } else {
+      setEditingAssignment(null);
+      setCriteriaFile(undefined);
+      setCriteriaText(undefined);
+      form.resetFields();
+    }
+    setModalOpen(true);
+  };
+
   return (
     <Card
       title={
@@ -157,11 +216,7 @@ export function AssignmentManagement() {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => {
-            setEditingAssignment(null);
-            form.resetFields();
-            setModalOpen(true);
-          }}
+          onClick={() => openEditModal()}
         >
           布置任务
         </Button>
@@ -238,17 +293,7 @@ export function AssignmentManagement() {
                 <Button
                   size="small"
                   icon={<EditOutlined />}
-                  onClick={() => {
-                    setEditingAssignment(record);
-                    form.setFieldsValue({
-                      title: record.title,
-                      description: record.description,
-                      criteriaText: record.criteriaText,
-                      classId: record.classId,
-                      deadline: record.deadline ? new Date(record.deadline) : undefined,
-                    });
-                    setModalOpen(true);
-                  }}
+                  onClick={() => openEditModal(record)}
                 >
                   编辑
                 </Button>
@@ -288,6 +333,8 @@ export function AssignmentManagement() {
           setModalOpen(false);
           form.resetFields();
           setEditingAssignment(null);
+          setCriteriaFile(undefined);
+          setCriteriaText(undefined);
         }}
         okText={editingAssignment ? '保存' : '创建'}
         width={700}
@@ -323,11 +370,52 @@ export function AssignmentManagement() {
             />
           </Form.Item>
 
-          <Form.Item name="criteriaText" label="评判标准">
-            <TextArea
-              placeholder="请输入评判标准内容，将用于作品分析时的评分依据"
-              rows={8}
-            />
+          {/* 评判标准文件上传 */}
+          <Form.Item label="评判标准文件">
+            <div style={{ marginBottom: 8 }}>
+              <Upload
+                beforeUpload={(file) => {
+                  handleCriteriaFileChange(file);
+                  return false;
+                }}
+                fileList={criteriaFile ? [{ uid: criteriaFile.name, name: criteriaFile.name, status: 'done' }] : []}
+                onRemove={() => {
+                  setCriteriaFile(undefined);
+                  setCriteriaText(undefined);
+                  form.setFieldsValue({ criteriaText: undefined });
+                }}
+                accept=".pdf,.docx,.doc,.txt"
+                maxCount={1}
+              >
+                <Button icon={<UploadOutlined />} loading={criteriaParsing}>
+                  上传评判标准文件
+                </Button>
+              </Upload>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                支持 PDF、Word、TXT 格式，上传后自动解析内容
+              </Text>
+            </div>
+
+            {criteriaParsing && (
+              <div style={{ textAlign: 'center', padding: 16 }}>
+                <Spin tip="正在解析评判标准文件..." />
+              </div>
+            )}
+
+            {criteriaText && !criteriaParsing && (
+              <div style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>解析结果预览：</Text>
+                <div style={{ maxHeight: 200, overflow: 'auto', marginTop: 4 }}>
+                  <Text style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
+                    {criteriaText.length > 500 ? criteriaText.substring(0, 500) + '...' : criteriaText}
+                  </Text>
+                </div>
+              </div>
+            )}
+          </Form.Item>
+
+          <Form.Item name="criteriaText" label="评判标准内容" hidden>
+            <TextArea rows={8} />
           </Form.Item>
 
           <div style={{ marginTop: -8, marginBottom: 16 }}>
