@@ -1,4 +1,4 @@
-"""视频分析核心处理器"""
+"""作品分析核心处理器"""
 
 from __future__ import annotations
 
@@ -53,6 +53,49 @@ from .transcriber import (
 logger = logging.getLogger(__name__)
 
 
+# 文件类型定义
+FILE_TYPE_EXTENSIONS = {
+    "video": {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".3gp"},
+    "audio": {".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"},
+    "document": {".pdf", ".doc", ".docx", ".txt", ".md", ".ppt", ".pptx", ".xls", ".xlsx", ".rtf", ".odt"},
+}
+
+
+def detect_file_type(file_path: str) -> str:
+    """根据文件后缀检测文件类型
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        文件类型: "video", "audio", "document"
+
+    Raises:
+        ValueError: 不支持的文件类型
+    """
+    ext = Path(file_path).suffix.lower()
+
+    for file_type, extensions in FILE_TYPE_EXTENSIONS.items():
+        if ext in extensions:
+            return file_type
+
+    raise ValueError(f"不支持的文件类型: {ext}")
+
+
+def sanitize_file_name(file_name: str) -> str:
+    """处理文件名中的特殊字符
+
+    Args:
+        file_name: 原始文件名
+
+    Returns:
+        处理后的文件名
+    """
+    import re
+    # 替换危险字符
+    return re.sub(r'[/\\:*?"<>|]', '_', file_name)
+
+
 class VideoAnalyzer:
     """视频分析器"""
 
@@ -91,7 +134,7 @@ class VideoAnalyzer:
         request: WorkAnalysisRequest,
         progress_callback: Callable[[WorkAnalysisProgress], None] | None = None,
     ) -> WorkAnalysisResult:
-        """执行视频分析"""
+        """执行作品分析"""
         task_id = request.task_id
         started_at = datetime.now(timezone.utc)
 
@@ -114,8 +157,50 @@ class VideoAnalyzer:
                 started_at=started_at.isoformat(),
             )
 
-            # 1. 提取元数据
-            update_progress(VideoTaskStatus.EXTRACTING_METADATA, 10, "提取视频元数据")
+            # 检测文件类型
+            try:
+                file_type = detect_file_type(request.file_path)
+                result.file_type = file_type
+                logger.info("Detected file type: %s for file: %s", file_type, request.file_name)
+            except ValueError as e:
+                result.status = VideoTaskStatus.FAILED
+                result.error = str(e)
+                result.completed_at = datetime.now(timezone.utc).isoformat()
+                return result
+
+            # 根据文件类型分发到不同的分析流程
+            if file_type == "video":
+                return await self._analyze_video(request, result, update_progress, started_at)
+            elif file_type == "audio":
+                return await self._analyze_audio(request, result, update_progress, started_at)
+            elif file_type == "document":
+                return await self._analyze_document(request, result, update_progress, started_at)
+            else:
+                result.status = VideoTaskStatus.FAILED
+                result.error = f"未实现的文件类型分析: {file_type}"
+                result.completed_at = datetime.now(timezone.utc).isoformat()
+                return result
+
+        except Exception as e:
+            logger.exception("Work analysis failed")
+            result.status = VideoTaskStatus.FAILED
+            result.error = str(e)
+            result.completed_at = datetime.now(timezone.utc).isoformat()
+            update_progress(VideoTaskStatus.FAILED, 0, f"处理失败: {e}")
+            return result
+
+    async def _analyze_video(
+        self,
+        request: WorkAnalysisRequest,
+        result: WorkAnalysisResult,
+        update_progress: Callable,
+        started_at: datetime,
+    ) -> WorkAnalysisResult:
+        """分析视频类型作品"""
+        task_id = request.task_id
+
+        # 1. 提取元数据
+        update_progress(VideoTaskStatus.EXTRACTING_METADATA, 10, "提取视频元数据")
             metadata = extract_metadata(request.file_path)
             result.metadata = VideoMetadataSchema(
                 duration_seconds=metadata.duration,
@@ -407,6 +492,445 @@ class VideoAnalyzer:
             stability=stability,
             overall_score=score,
         )
+
+    async def _analyze_audio(
+        self,
+        request: WorkAnalysisRequest,
+        result: WorkAnalysisResult,
+        update_progress: Callable,
+        started_at: datetime,
+    ) -> WorkAnalysisResult:
+        """分析音频类型作品"""
+        task_id = request.task_id
+        audio_path = None
+
+        try:
+            # 1. 提取音频元数据
+            update_progress(VideoTaskStatus.EXTRACTING_METADATA, 10, "提取音频元数据")
+            metadata = extract_metadata(request.file_path)
+            result.metadata = VideoMetadataSchema(
+                duration_seconds=metadata.duration,
+                width=0,  # 音频没有视频尺寸
+                height=0,
+                fps=0,
+                codec=metadata.work_codec,
+                bitrate=0,
+                file_size=metadata.file_size,
+                format_name=metadata.format_name,
+                has_audio=True,
+                audio_codec=metadata.audio_codec,
+                audio_sample_rate=metadata.sample_rate,
+            )
+
+            # 2. 音频特征分析
+            update_progress(VideoTaskStatus.EXTRACTING_AUDIO, 25, "分析音频特征")
+            audio_features = analyze_audio(request.file_path, metadata.duration)
+
+            # 3. 语音转录
+            update_progress(VideoTaskStatus.TRANSCRIBING, 40, "语音转录")
+            transcription = transcribe_with_local_whisper(request.file_path)
+            if not transcription:
+                transcription = transcribe_with_faster_whisper(request.file_path)
+            if not transcription:
+                if self.settings.model_api_key and self.settings.model_api_base_url:
+                    transcription = transcribe_with_whisper_api(
+                        request.file_path,
+                        self.settings.model_api_key,
+                        self.settings.model_api_base_url,
+                    )
+
+            # 构建音频分析结果
+            if transcription:
+                result.audio_analysis = AudioAnalysis(
+                    transcription=[
+                        AudioSegment(
+                            start_time=seg.start_time,
+                            end_time=seg.end_time,
+                            text=seg.text,
+                            confidence=seg.confidence,
+                        )
+                        for seg in transcription.segments
+                    ],
+                    total_speech_duration=audio_features.total_speech_duration if audio_features else 0,
+                    average_speech_rate=transcription.speech_rate,
+                    detected_language=transcription.language,
+                    clarity_score=audio_features.clarity_score if audio_features else None,
+                )
+            else:
+                result.audio_analysis = AudioAnalysis(
+                    transcription=[],
+                    total_speech_duration=audio_features.total_speech_duration if audio_features else 0,
+                    average_speech_rate=0,
+                    detected_language="unknown",
+                )
+
+            # 4. AI 综合分析（基于转录文字）
+            ai_analysis_text = ""
+            if self.text_provider:
+                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 60, "AI 内容分析")
+
+                client = self.text_provider.create_client()
+                model = self.settings.text_model_name or "gpt-5.5"
+
+                # 构建音频分析提示
+                transcription_text = "\n".join([
+                    f"[{seg.start_time:.1f}s - {seg.end_time:.1f}s] {seg.text}"
+                    for seg in (transcription.segments if transcription else [])
+                ])
+
+                prompt = f"""请分析以下音频内容：
+
+音频信息：
+- 时长：{metadata.duration:.1f} 秒
+- 格式：{metadata.format_name}
+- 采样率：{metadata.sample_rate} Hz
+
+转录内容：
+{transcription_text}
+
+音频特征：
+- 平均语速：{transcription.speech_rate:.1f} 字/分钟（如果可用）
+- 检测语言：{transcription.language if transcription else "未知"}
+
+请提供：
+1. 主题识别
+2. 内容摘要
+3. 关键要点
+4. 表达质量评估
+"""
+
+                try:
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3,
+                    )
+                    ai_analysis_text = response.choices[0].message.content or ""
+                except Exception as e:
+                    logger.error("AI analysis failed: %s", e)
+
+                result.content_analysis = ContentAnalysis(
+                    overall_topic="音频分析",
+                    summary=ai_analysis_text if ai_analysis_text else "分析完成",
+                    key_points=[],
+                    keywords=[],
+                )
+
+            # 5. 评判标准评分
+            if self.text_provider and ai_analysis_text:
+                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 80, "评判标准评分")
+
+                client = self.text_provider.create_client()
+                model = self.settings.text_model_name or "gpt-5.5"
+
+                criteria_text = request.criteria_text or get_default_criteria()
+
+                evaluation_data = evaluate_with_criteria(
+                    client,
+                    model,
+                    ai_analysis_text,
+                    criteria_text,
+                )
+
+                if result.content_analysis and isinstance(evaluation_data, dict):
+                    try:
+                        result.content_analysis.evaluation = EvaluationResult(
+                            total_score=evaluation_data.get("total_score", 0),
+                            grade=evaluation_data.get("grade", ""),
+                            scores=[
+                                ScoreItem(
+                                    dimension=s.get("dimension", ""),
+                                    max_score=s.get("max_score", 0),
+                                    score=s.get("score", 0),
+                                    evidence=s.get("evidence", ""),
+                                    suggestion=s.get("suggestion", ""),
+                                )
+                                for s in evaluation_data.get("scores", [])
+                            ],
+                            strengths=evaluation_data.get("strengths", []),
+                            weaknesses=evaluation_data.get("weaknesses", []),
+                            priority_suggestions=evaluation_data.get("priority_suggestions", []),
+                            criteria_text=evaluation_data.get("criteria_text", criteria_text),
+                        )
+                    except Exception as e:
+                        logger.error("Failed to store evaluation result: %s", e)
+
+            # 6. 完成
+            completed_at = datetime.now(timezone.utc)
+            result.status = VideoTaskStatus.COMPLETED
+            result.progress = 100
+            result.completed_at = completed_at.isoformat()
+            result.processing_time_ms = int((completed_at - started_at).total_seconds() * 1000)
+
+            update_progress(VideoTaskStatus.COMPLETED, 100, "分析完成")
+
+            return result
+
+        except Exception as e:
+            logger.exception("Audio analysis failed")
+            result.status = VideoTaskStatus.FAILED
+            result.error = str(e)
+            result.completed_at = datetime.now(timezone.utc).isoformat()
+            update_progress(VideoTaskStatus.FAILED, 0, f"处理失败: {e}")
+            return result
+
+    async def _analyze_document(
+        self,
+        request: WorkAnalysisRequest,
+        result: WorkAnalysisResult,
+        update_progress: Callable,
+        started_at: datetime,
+    ) -> WorkAnalysisResult:
+        """分析文本文档类型作品"""
+        task_id = request.task_id
+
+        try:
+            # 1. 提取文档元数据
+            update_progress(VideoTaskStatus.EXTRACTING_METADATA, 10, "提取文档元数据")
+
+            file_path = Path(request.file_path)
+            file_size = file_path.stat().st_size
+            ext = file_path.suffix.lower()
+
+            result.metadata = VideoMetadataSchema(
+                duration_seconds=0,  # 文档没有时长
+                width=0,
+                height=0,
+                fps=0,
+                codec=ext.lstrip('.'),
+                bitrate=0,
+                file_size=file_size,
+                format_name=ext.lstrip('.').upper(),
+                has_audio=False,
+            )
+
+            # 2. 解析文档内容
+            update_progress(VideoTaskStatus.ANALYZING_CONTENT, 30, "解析文档内容")
+
+            document_text = self._parse_document(request.file_path, ext)
+
+            if not document_text:
+                result.status = VideoTaskStatus.FAILED
+                result.error = "无法解析文档内容"
+                result.completed_at = datetime.now(timezone.utc).isoformat()
+                return result
+
+            # 3. AI 综合分析
+            ai_analysis_text = ""
+            if self.text_provider:
+                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 50, "AI 内容分析")
+
+                client = self.text_provider.create_client()
+                model = self.settings.text_model_name or "gpt-5.5"
+
+                # 截取前 10000 字符进行分析
+                text_for_analysis = document_text[:10000]
+
+                prompt = f"""请分析以下文档内容：
+
+文档信息：
+- 文件名：{request.file_name}
+- 文件类型：{ext.lstrip('.').upper()}
+- 文件大小：{file_size / 1024:.1f} KB
+
+文档内容：
+{text_for_analysis}
+
+请提供：
+1. 主题识别
+2. 内容摘要
+3. 关键要点
+4. 文档结构分析
+5. 写作质量评估
+"""
+
+                try:
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3,
+                    )
+                    ai_analysis_text = response.choices[0].message.content or ""
+                except Exception as e:
+                    logger.error("AI analysis failed: %s", e)
+
+                result.content_analysis = ContentAnalysis(
+                    overall_topic="文档分析",
+                    summary=ai_analysis_text if ai_analysis_text else "分析完成",
+                    key_points=[],
+                    keywords=[],
+                )
+
+            # 4. 评判标准评分
+            if self.text_provider and ai_analysis_text:
+                update_progress(VideoTaskStatus.ANALYZING_CONTENT, 80, "评判标准评分")
+
+                client = self.text_provider.create_client()
+                model = self.settings.text_model_name or "gpt-5.5"
+
+                criteria_text = request.criteria_text or get_default_criteria()
+
+                evaluation_data = evaluate_with_criteria(
+                    client,
+                    model,
+                    ai_analysis_text,
+                    criteria_text,
+                )
+
+                if result.content_analysis and isinstance(evaluation_data, dict):
+                    try:
+                        result.content_analysis.evaluation = EvaluationResult(
+                            total_score=evaluation_data.get("total_score", 0),
+                            grade=evaluation_data.get("grade", ""),
+                            scores=[
+                                ScoreItem(
+                                    dimension=s.get("dimension", ""),
+                                    max_score=s.get("max_score", 0),
+                                    score=s.get("score", 0),
+                                    evidence=s.get("evidence", ""),
+                                    suggestion=s.get("suggestion", ""),
+                                )
+                                for s in evaluation_data.get("scores", [])
+                            ],
+                            strengths=evaluation_data.get("strengths", []),
+                            weaknesses=evaluation_data.get("weaknesses", []),
+                            priority_suggestions=evaluation_data.get("priority_suggestions", []),
+                            criteria_text=evaluation_data.get("criteria_text", criteria_text),
+                        )
+                    except Exception as e:
+                        logger.error("Failed to store evaluation result: %s", e)
+
+            # 5. 完成
+            completed_at = datetime.now(timezone.utc)
+            result.status = VideoTaskStatus.COMPLETED
+            result.progress = 100
+            result.completed_at = completed_at.isoformat()
+            result.processing_time_ms = int((completed_at - started_at).total_seconds() * 1000)
+
+            update_progress(VideoTaskStatus.COMPLETED, 100, "分析完成")
+
+            return result
+
+        except Exception as e:
+            logger.exception("Document analysis failed")
+            result.status = VideoTaskStatus.FAILED
+            result.error = str(e)
+            result.completed_at = datetime.now(timezone.utc).isoformat()
+            update_progress(VideoTaskStatus.FAILED, 0, f"处理失败: {e}")
+            return result
+
+    def _parse_document(self, file_path: str, ext: str) -> str:
+        """解析文档内容
+
+        Args:
+            file_path: 文件路径
+            ext: 文件扩展名
+
+        Returns:
+            文档文本内容
+        """
+        try:
+            if ext == '.pdf':
+                return self._parse_pdf(file_path)
+            elif ext in ['.doc', '.docx']:
+                return self._parse_docx(file_path)
+            elif ext in ['.ppt', '.pptx']:
+                return self._parse_pptx(file_path)
+            elif ext in ['.xls', '.xlsx']:
+                return self._parse_excel(file_path)
+            elif ext in ['.txt', '.md', '.rtf']:
+                return self._parse_text(file_path)
+            else:
+                logger.warning("Unsupported document type: %s", ext)
+                return ""
+        except Exception as e:
+            logger.error("Failed to parse document %s: %s", file_path, e)
+            return ""
+
+    def _parse_pdf(self, file_path: str) -> str:
+        """解析 PDF 文件"""
+        try:
+            import pdfplumber
+            text = ""
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+            return text
+        except ImportError:
+            logger.error("pdfplumber not installed. Install with: pip install pdfplumber")
+            return ""
+        except Exception as e:
+            logger.error("Failed to parse PDF: %s", e)
+            return ""
+
+    def _parse_docx(self, file_path: str) -> str:
+        """解析 Word 文件"""
+        try:
+            from docx import Document
+            doc = Document(file_path)
+            return "\n".join([para.text for para in doc.paragraphs if para.text])
+        except ImportError:
+            logger.error("python-docx not installed. Install with: pip install python-docx")
+            return ""
+        except Exception as e:
+            logger.error("Failed to parse DOCX: %s", e)
+            return ""
+
+    def _parse_pptx(self, file_path: str) -> str:
+        """解析 PPT 文件"""
+        try:
+            from pptx import Presentation
+            prs = Presentation(file_path)
+            text = ""
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text:
+                        text += shape.text + "\n"
+            return text
+        except ImportError:
+            logger.error("python-pptx not installed. Install with: pip install python-pptx")
+            return ""
+        except Exception as e:
+            logger.error("Failed to parse PPTX: %s", e)
+            return ""
+
+    def _parse_excel(self, file_path: str) -> str:
+        """解析 Excel 文件"""
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, data_only=True)
+            text = ""
+            for sheet in wb:
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = "\t".join([str(cell) if cell is not None else "" for cell in row])
+                    if row_text.strip():
+                        text += row_text + "\n"
+            return text
+        except ImportError:
+            logger.error("openpyxl not installed. Install with: pip install openpyxl")
+            return ""
+        except Exception as e:
+            logger.error("Failed to parse Excel: %s", e)
+            return ""
+
+    def _parse_text(self, file_path: str) -> str:
+        """解析纯文本文件"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except UnicodeDecodeError:
+            # 尝试其他编码
+            try:
+                with open(file_path, 'r', encoding='gbk') as f:
+                    return f.read()
+            except Exception:
+                logger.error("Failed to decode text file: %s", file_path)
+                return ""
+        except Exception as e:
+            logger.error("Failed to parse text file: %s", e)
+            return ""
 
     def _upload_to_minio(self, file_path: Path, object_name: str) -> str | None:
         """上传文件到 MinIO 并返回访问 URL"""

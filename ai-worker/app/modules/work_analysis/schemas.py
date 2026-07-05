@@ -140,9 +140,10 @@ class TechnicalQuality(BaseModel):
 
 
 class WorkAnalysisResult(BaseModel):
-    """视频分析结果"""
+    """作品分析结果"""
     task_id: str
     file_name: str
+    file_type: str | None = None  # "video", "audio", "document"
     status: VideoTaskStatus
 
     # 元数据

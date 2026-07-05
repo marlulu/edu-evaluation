@@ -12,6 +12,102 @@ export function getApiErrorMessage(error: unknown): string {
   return String(error);
 }
 
+// 文件类型定义
+export type FileType = 'video' | 'audio' | 'document';
+
+// 文件后缀映射
+const FILE_EXTENSIONS: Record<FileType, string[]> = {
+  video: ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm', '.m4v', '.3gp'],
+  audio: ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a', '.opus'],
+  document: ['.pdf', '.doc', '.docx', '.txt', '.md', '.ppt', '.pptx', '.xls', '.xlsx', '.rtf', '.odt'],
+};
+
+// 文件类型图标映射
+export const FILE_TYPE_ICONS: Record<FileType, string> = {
+  video: 'VideoCameraOutlined',
+  audio: 'AudioOutlined',
+  document: 'FileTextOutlined',
+};
+
+// 文件类型颜色映射
+export const FILE_TYPE_COLORS: Record<FileType, string> = {
+  video: 'blue',
+  audio: 'green',
+  document: 'orange',
+};
+
+// 文件类型标签映射
+export const FILE_TYPE_LABELS: Record<FileType, string> = {
+  video: '视频',
+  audio: '音频',
+  document: '文档',
+};
+
+/**
+ * 根据文件名获取文件类型
+ * @param fileName 文件名（支持带路径）
+ * @returns 文件类型
+ */
+export function getFileType(fileName: string): FileType {
+  // 处理文件名中的路径分隔符
+  const name = fileName.split(/[/\\]/).pop() || fileName;
+  const ext = name.toLowerCase().split('.').pop() || '';
+
+  if (!ext) {
+    throw new Error('无法识别文件类型：文件没有扩展名');
+  }
+
+  const dotExt = `.${ext}`;
+
+  for (const [type, extensions] of Object.entries(FILE_EXTENSIONS)) {
+    if (extensions.includes(dotExt)) {
+      return type as FileType;
+    }
+  }
+
+  throw new Error(`不支持的文件类型: ${ext}`);
+}
+
+/**
+ * 获取文件类型的中文标签
+ * @param fileName 文件名
+ * @returns 文件类型标签
+ */
+export function getFileTypeLabel(fileName: string): string {
+  try {
+    const type = getFileType(fileName);
+    return FILE_TYPE_LABELS[type];
+  } catch {
+    return '未知';
+  }
+}
+
+/**
+ * 检查文件类型是否被支持
+ * @param fileName 文件名
+ * @returns 是否支持
+ */
+export function isSupportedFileType(fileName: string): boolean {
+  try {
+    getFileType(fileName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 获取支持的文件扩展名列表
+ * @param fileType 文件类型（可选）
+ * @returns 扩展名列表
+ */
+export function getSupportedExtensions(fileType?: FileType): string[] {
+  if (fileType) {
+    return FILE_EXTENSIONS[fileType];
+  }
+  return Object.values(FILE_EXTENSIONS).flat();
+}
+
 // 类型定义
 export type WorkTaskStatus =
   | 'pending'
@@ -123,6 +219,7 @@ export type TechnicalQuality = {
 export type WorkAnalysisResult = {
   taskId: string;
   fileName: string;
+  fileType?: FileType;
   status: WorkTaskStatus;
   metadata?: WorkMetadata;
   keyframes?: KeyframeInfo[];
@@ -141,6 +238,7 @@ export type WorkAnalysisRequest = {
   taskId?: string;
   fileName: string;
   filePath: string;
+  fileType?: FileType;
   options?: WorkAnalysisOptions;
   criteriaText?: string;
 };

@@ -43,29 +43,60 @@ public class WorkAnalysisController {
         this.objectMapper = objectMapper;
     }
 
+    // 文件类型枚举
+    private static final Map<String, String[]> FILE_TYPE_EXTENSIONS = Map.of(
+        "video", new String[]{".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".3gp"},
+        "audio", new String[]{".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"},
+        "document", new String[]{".pdf", ".doc", ".docx", ".txt", ".md", ".ppt", ".pptx", ".xls", ".xlsx", ".rtf", ".odt"}
+    );
+
+    /**
+     * 根据文件扩展名获取文件类型
+     */
+    private String getFileType(String fileName) {
+        if (fileName == null) return null;
+        String ext = fileName.substring(fileName.lastIndexOf(".")).toLowerCase();
+        for (Map.Entry<String, String[]> entry : FILE_TYPE_EXTENSIONS.entrySet()) {
+            for (String allowedExt : entry.getValue()) {
+                if (allowedExt.equals(ext)) {
+                    return entry.getKey();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 处理文件名中的特殊字符
+     */
+    private String sanitizeFileName(String fileName) {
+        if (fileName == null) return "unknown";
+        // 替换危险字符
+        return fileName.replaceAll("[/\\\\:*?\"<>|]", "_");
+    }
+
     // ====== 文件上传 ======
 
     @PostMapping("/upload")
-    public Map<String, Object> uploadVideo(@RequestParam("file") MultipartFile file) throws IOException {
+    public Map<String, Object> uploadWork(@RequestParam("file") MultipartFile file) throws IOException {
         if (file.isEmpty()) {
             return Map.of("success", false, "message", "文件为空");
         }
 
+        // 获取原始文件名并处理特殊字符
+        String originalName = sanitizeFileName(file.getOriginalFilename());
+
         // 验证文件类型
-        String originalName = file.getOriginalFilename();
-        String ext = originalName != null ? originalName.substring(originalName.lastIndexOf(".")).toLowerCase() : "";
-        String[] allowedExts = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv"};
-        boolean allowed = false;
-        for (String e : allowedExts) {
-            if (e.equals(ext)) { allowed = true; break; }
-        }
-        if (!allowed) {
+        String fileType = getFileType(originalName);
+        if (fileType == null) {
+            String ext = originalName != null ? originalName.substring(originalName.lastIndexOf(".")).toLowerCase() : "";
             return Map.of("success", false, "message", "不支持的文件格式: " + ext);
         }
 
         // 保存文件
+        String ext = originalName.substring(originalName.lastIndexOf("."));
         String fileName = UUID.randomUUID() + ext;
-        Path uploadPath = Paths.get(uploadDir, "works");
+        Path uploadPath = Paths.get(uploadDir, "works", fileType);
         Files.createDirectories(uploadPath);
         Path filePath = uploadPath.resolve(fileName);
         try (InputStream inputStream = file.getInputStream()) {
@@ -76,7 +107,8 @@ public class WorkAnalysisController {
             "success", true,
             "fileName", originalName,
             "filePath", filePath.toAbsolutePath().toString().replace("\\", "/"),
-            "fileSize", file.getSize()
+            "fileSize", file.getSize(),
+            "fileType", fileType
         );
     }
 

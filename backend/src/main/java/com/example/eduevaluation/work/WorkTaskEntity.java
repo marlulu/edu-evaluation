@@ -17,6 +17,9 @@ public class WorkTaskEntity {
     @Column(name = "file_name", nullable = false, length = 500)
     private String fileName;
 
+    @Column(name = "file_type", length = 20)
+    private String fileType;
+
     @Column(nullable = false, length = 50)
     private String status;
 
@@ -35,9 +38,10 @@ public class WorkTaskEntity {
     public WorkTaskEntity() {
     }
 
-    public WorkTaskEntity(String taskId, String fileName, String status, double progress) {
+    public WorkTaskEntity(String taskId, String fileName, String fileType, String status, double progress) {
         this.taskId = taskId;
         this.fileName = fileName;
+        this.fileType = fileType;
         this.status = status;
         this.progress = progress;
         this.createdAt = LocalDateTime.now();
@@ -60,6 +64,14 @@ public class WorkTaskEntity {
 
     public void setFileName(String fileName) {
         this.fileName = fileName;
+    }
+
+    public String getFileType() {
+        return fileType;
+    }
+
+    public void setFileType(String fileType) {
+        this.fileType = fileType;
     }
 
     public String getStatus() {
