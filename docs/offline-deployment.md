@@ -182,7 +182,8 @@ Copy-Item deploy/docker-images/*.tar edu-evaluation-offline/docker-images/
 Copy-Item -Recurse deploy/ edu-evaluation-offline/deploy/
 
 # 打包最终离线包
-tar -czf "edu-evaluation-offline-$(Get-Date -Format 'yyyyMMdd').tar.gz" edu-evaluation-offline/
+$date = Get-Date -Format 'yyyyMMdd'
+tar -czf "edu-evaluation-offline-$date.tar.gz" edu-evaluation-offline/
 ```
 
 > 💡 **为什么不需要源码？**
