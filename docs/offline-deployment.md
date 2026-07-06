@@ -62,6 +62,8 @@ free -h
 
 ### 2.1 拉取基础镜像
 
+只需拉取**运行时**基础镜像，构建工具镜像（maven、node、python）不需要。
+
 ```bash
 # 创建镜像列表
 cat > images.txt << 'EOF'
@@ -70,10 +72,6 @@ redis:7-alpine
 minio/minio:latest
 rabbitmq:4-management
 nginx:alpine
-python:3.11-slim
-node:20-alpine
-maven:3.9-eclipse-temurin-17-alpine
-eclipse-temurin:17-jre-alpine
 EOF
 
 # 拉取所有镜像
@@ -112,7 +110,7 @@ docker save minio/minio:latest | gzip > docker-images/minio-latest.tar.gz
 docker save rabbitmq:4-management | gzip > docker-images/rabbitmq-4-management.tar.gz
 docker save nginx:alpine | gzip > docker-images/nginx-alpine.tar.gz
 
-# 导出应用镜像（注意：镜像名与 docker-compose.yml 中的 build 镜像名一致）
+# 导出应用镜像（镜像名与 docker-compose.yml 中一致）
 docker save deploy-backend | gzip > docker-images/edu-backend.tar.gz
 docker save deploy-ai-worker | gzip > docker-images/edu-ai-worker.tar.gz
 docker save deploy-frontend | gzip > docker-images/edu-frontend.tar.gz
@@ -134,9 +132,6 @@ docker save nginx:alpine -o docker-images/nginx-alpine.tar
 docker save deploy-backend -o docker-images/edu-backend.tar
 docker save deploy-ai-worker -o docker-images/edu-ai-worker.tar
 docker save deploy-frontend -o docker-images/edu-frontend.tar
-
-# （可选）压缩以减小体积，加快传输
-# tar -czf docker-images.tar.gz docker-images/
 ```
 
 ### 2.4 打包完整离线包
@@ -776,6 +771,6 @@ edu-evaluation-offline-20260706.tar.gz
 
 ---
 
-> 📝 **文档版本**: v3.0
+> 📝 **文档版本**: v3.1
 > 📅 **更新日期**: 2026-07-06
 > 👤 **维护者**: 开发团队
