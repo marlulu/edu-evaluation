@@ -141,6 +141,8 @@ docker save deploy-frontend -o docker-images/edu-frontend.tar
 
 ### 2.4 打包完整离线包
 
+只需打包 **Docker 镜像 + 部署配置文件**，不需要完整源码。
+
 **Linux / macOS / Git Bash：**
 
 ```bash
@@ -153,17 +155,8 @@ mkdir -p edu-evaluation-offline/docker-images
 # 复制镜像文件
 cp deploy/docker-images/*.tar.gz edu-evaluation-offline/docker-images/
 
-# 复制项目源码（排除构建产物）
-rsync -av \
-  --exclude='node_modules' \
-  --exclude='target' \
-  --exclude='.git' \
-  --exclude='__pycache__' \
-  --exclude='.idea' \
-  --exclude='.vscode' \
-  --exclude='*.tar.gz' \
-  --exclude='data/' \
-  ./ edu-evaluation-offline/edu-evaluation/
+# 复制部署配置文件（只需这些）
+cp -r deploy/ edu-evaluation-offline/deploy/
 
 # 打包最终离线包
 tar czf edu-evaluation-offline-$(date +%Y%m%d).tar.gz edu-evaluation-offline/
@@ -181,9 +174,8 @@ New-Item -ItemType Directory -Force -Path edu-evaluation-offline/docker-images
 # 复制镜像文件
 Copy-Item deploy/docker-images/*.tar edu-evaluation-offline/docker-images/
 
-# 复制项目源码（排除构建产物）
-$exclude = @('node_modules', 'target', '.git', '__pycache__', '.idea', '.vscode', 'data')
-robocopy . edu-evaluation-offline/edu-evaluation /E /XD $exclude /XF "*.tar.gz"
+# 复制部署配置文件（只需这些）
+Copy-Item -Recurse deploy/ edu-evaluation-offline/deploy/
 
 # 打包最终离线包（使用 tar）
 tar -czf "edu-evaluation-offline-$(Get-Date -Format 'yyyyMMdd').tar.gz" edu-evaluation-offline/
@@ -191,6 +183,11 @@ tar -czf "edu-evaluation-offline-$(Get-Date -Format 'yyyyMMdd').tar.gz" edu-eval
 # 检查包大小
 Get-Item "edu-evaluation-offline-*.tar.gz" | Select-Object Name, @{N='Size(MB)';E={[math]::Round($_.Length/1MB,2)}}
 ```
+
+> 💡 **为什么不需要源码？**
+> - Docker 镜像已包含编译好的应用程序
+> - 部署只需要：`docker-compose.yml`、`.env`、`nginx/`、`mysql/` 等配置文件
+> - 数据库迁移脚本已打包在 backend 镜像中
 
 ---
 
@@ -718,19 +715,11 @@ edu-evaluation-offline-20260706.tar.gz
     │   ├── edu-backend.tar.gz
     │   ├── edu-ai-worker.tar.gz
     │   └── edu-frontend.tar.gz
-    └── edu-evaluation/                 # 项目源码
-        ├── backend/                    # Spring Boot 后端
-        │   ├── src/main/resources/db/migration/  # Flyway 迁移脚本
-        │   └── Dockerfile
-        ├── frontend/                   # React 前端
-        │   └── Dockerfile
-        ├── ai-worker/                  # Python AI 服务
-        │   └── Dockerfile
-        └── deploy/                     # 部署配置
-            ├── docker-compose.yml
-            ├── .env.example
-            ├── mysql/
-            └── nginx/
+    └── deploy/                         # 部署配置文件
+        ├── docker-compose.yml          # 容器编排配置
+        ├── .env.example                # 环境变量模板
+        ├── mysql/                      # MySQL 初始化脚本
+        └── nginx/                      # Nginx 配置
 ```
 
 ### B. 操作流程总结
@@ -741,8 +730,9 @@ edu-evaluation-offline-20260706.tar.gz
 ├─────────────────────────────────────────────────────────────┤
 │  1. git clone 项目代码                                       │
 │  2. docker compose build  构建镜像                           │
-│  3. docker save  导出所有镜像为 tar.gz                       │
-│  4. 打包源码 + 镜像 = 离线包                                 │
+│  3. docker save  导出所有镜像为 tar                          │
+│  4. 复制 deploy/ 配置目录                                    │
+│  5. 打包镜像 + 配置 = 离线包                                 │
 └─────────────────────────────────────────────────────────────┘
                            │
                            │ scp / rsync / USB
