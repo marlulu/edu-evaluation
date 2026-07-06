@@ -110,7 +110,7 @@ export async function exportClassWorksToPdf(classId: string): Promise<void> {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `班级作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  a.download = `班级作品导出_${new Date().toISOString().slice(0, 10)}.zip`;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
@@ -135,7 +135,7 @@ export async function exportStudentWorksToPdf(studentId: string): Promise<void> 
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `学生作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  a.download = `学生作品导出_${new Date().toISOString().slice(0, 10)}.zip`;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
@@ -159,7 +159,7 @@ export async function exportClassesWorksToPdf(classIds: string[]): Promise<void>
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `班级作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  a.download = `班级作品导出_${new Date().toISOString().slice(0, 10)}.zip`;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
@@ -183,7 +183,7 @@ export async function exportStudentsWorksToPdf(studentIds: string[]): Promise<vo
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `学生作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  a.download = `学生作品导出_${new Date().toISOString().slice(0, 10)}.zip`;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
@@ -207,7 +207,7 @@ export async function exportStudentSelectedWorksToPdf(studentId: string, taskIds
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `学生作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  a.download = `学生作品导出_${new Date().toISOString().slice(0, 10)}.zip`;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);

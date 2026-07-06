@@ -30,17 +30,17 @@ public class WorkExportController {
         }
 
         try {
-            byte[] pdfBytes = exportService.exportToPdf(taskIds);
+            byte[] zipBytes = exportService.exportToPdf(taskIds);
 
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = "作品分析报告_" + timestamp + ".pdf";
+            String fileName = "作品导出_" + timestamp + ".zip";
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .contentLength(pdfBytes.length)
-                    .body(pdfBytes);
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .contentLength(zipBytes.length)
+                    .body(zipBytes);
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.internalServerError().build();
@@ -50,17 +50,17 @@ public class WorkExportController {
     @GetMapping("/export/pdf/class/{classId}")
     public ResponseEntity<byte[]> exportByClass(@PathVariable String classId) {
         try {
-            byte[] pdfBytes = exportService.exportByClass(classId);
+            byte[] zipBytes = exportService.exportByClass(classId);
 
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = "班级作品报告_" + timestamp + ".pdf";
+            String fileName = "班级作品导出_" + timestamp + ".zip";
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .contentLength(pdfBytes.length)
-                    .body(pdfBytes);
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .contentLength(zipBytes.length)
+                    .body(zipBytes);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
@@ -72,17 +72,17 @@ public class WorkExportController {
     @GetMapping("/export/pdf/student/{studentId}")
     public ResponseEntity<?> exportByStudent(@PathVariable String studentId) {
         try {
-            byte[] pdfBytes = exportService.exportByStudent(studentId);
+            byte[] zipBytes = exportService.exportByStudent(studentId);
 
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = "学生作品报告_" + timestamp + ".pdf";
+            String fileName = "学生作品导出_" + timestamp + ".zip";
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .contentLength(pdfBytes.length)
-                    .body(pdfBytes);
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .contentLength(zipBytes.length)
+                    .body(zipBytes);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -99,17 +99,17 @@ public class WorkExportController {
         }
 
         try {
-            byte[] pdfBytes = exportService.exportByClasses(classIds);
+            byte[] zipBytes = exportService.exportByClasses(classIds);
 
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = "班级作品报告_" + timestamp + ".pdf";
+            String fileName = "班级作品导出_" + timestamp + ".zip";
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .contentLength(pdfBytes.length)
-                    .body(pdfBytes);
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .contentLength(zipBytes.length)
+                    .body(zipBytes);
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.internalServerError().build();
@@ -124,17 +124,17 @@ public class WorkExportController {
         }
 
         try {
-            byte[] pdfBytes = exportService.exportByStudents(studentIds);
+            byte[] zipBytes = exportService.exportByStudents(studentIds);
 
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = "学生作品报告_" + timestamp + ".pdf";
+            String fileName = "学生作品导出_" + timestamp + ".zip";
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .contentLength(pdfBytes.length)
-                    .body(pdfBytes);
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .contentLength(zipBytes.length)
+                    .body(zipBytes);
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.internalServerError().build();
@@ -151,17 +151,17 @@ public class WorkExportController {
         }
 
         try {
-            byte[] pdfBytes = exportService.exportStudentSelectedWorks(studentId, taskIds);
+            byte[] zipBytes = exportService.exportStudentSelectedWorks(studentId, taskIds);
 
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = "学生作品报告_" + timestamp + ".pdf";
+            String fileName = "学生作品导出_" + timestamp + ".zip";
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .contentLength(pdfBytes.length)
-                    .body(pdfBytes);
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .contentLength(zipBytes.length)
+                    .body(zipBytes);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {

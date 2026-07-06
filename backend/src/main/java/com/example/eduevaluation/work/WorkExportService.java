@@ -25,6 +25,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
 public class WorkExportService {
@@ -51,58 +53,12 @@ public class WorkExportService {
     }
 
     public byte[] exportToPdf(List<String> taskIds) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PdfWriter writer = new PdfWriter(baos);
-        PdfDocument pdf = new PdfDocument(writer);
-        Document document = new Document(pdf, PageSize.A4);
-        document.setMargins(36, 36, 36, 36);
+        List<WorkTaskEntity> tasks = taskIds.stream()
+                .map(id -> repository.findById(id).orElse(null))
+                .filter(t -> t != null)
+                .collect(Collectors.toList());
 
-        // 加载中文字体
-        PdfFont chineseFont = loadChineseFont();
-        document.setFont(chineseFont);
-
-        // 标题
-        Paragraph title = new Paragraph("作品分析报告")
-                .setFontSize(24)
-                .setBold()
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(8);
-        document.add(title);
-
-        Paragraph subtitle = new Paragraph("AI 教育评估系统")
-                .setFontSize(12)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(24);
-        document.add(subtitle);
-
-        // 分隔线
-        document.add(new LineSeparator(new SolidBorder(PRIMARY_COLOR, 1)));
-
-        // 导出每个任务
-        for (int i = 0; i < taskIds.size(); i++) {
-            String taskId = taskIds.get(i);
-            WorkTaskEntity task = repository.findById(taskId).orElse(null);
-            if (task == null) continue;
-
-            if (i > 0) {
-                document.add(new AreaBreak());
-            }
-
-            exportTask(document, task, i + 1);
-        }
-
-        // 页脚
-        document.add(new Paragraph("\n"));
-        document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-        Paragraph footer = new Paragraph("导出时间: " + java.time.LocalDateTime.now().toString().replace("T", " "))
-                .setFontSize(9)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.RIGHT);
-        document.add(footer);
-
-        document.close();
-        return baos.toByteArray();
+        return exportTasksAsZip(tasks);
     }
 
     /**
@@ -116,229 +72,48 @@ public class WorkExportService {
 
         List<StudentEntity> students = studentRepository.findByClassIdWithWorksOrderByCreatedAtDesc(classId);
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PdfWriter writer = new PdfWriter(baos);
-        PdfDocument pdf = new PdfDocument(writer);
-        Document document = new Document(pdf, PageSize.A4);
-        document.setMargins(36, 36, 36, 36);
-
-        PdfFont chineseFont = loadChineseFont();
-        document.setFont(chineseFont);
-
-        // 报告标题
-        Paragraph title = new Paragraph("班级作品分析报告")
-                .setFontSize(24)
-                .setBold()
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(8);
-        document.add(title);
-
-        // 班级信息
-        Paragraph subtitle = new Paragraph(classEntity.getClassName())
-                .setFontSize(16)
-                .setFontColor(PRIMARY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(4);
-        document.add(subtitle);
-
-        Paragraph info = new Paragraph("共 " + students.size() + " 名学生")
-                .setFontSize(12)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(24);
-        document.add(info);
-
-        document.add(new LineSeparator(new SolidBorder(PRIMARY_COLOR, 1)));
-
-        // 按学生分组导出
-        boolean firstStudent = true;
+        List<WorkTaskEntity> allTasks = new ArrayList<>();
         for (StudentEntity student : students) {
             List<WorkTaskEntity> tasks = student.getStudentWorks().stream()
                     .map(StudentWorkEntity::getWorkTask)
                     .filter(t -> t != null)
                     .collect(Collectors.toList());
-
-            if (tasks.isEmpty()) continue;
-
-            if (!firstStudent) {
-                document.add(new AreaBreak());
-            }
-            firstStudent = false;
-
-            // 学生信息头
-            String studentLabel = student.getStudentName();
-            if (student.getStudentNumber() != null && !student.getStudentNumber().isEmpty()) {
-                studentLabel += " (" + student.getStudentNumber() + ")";
-            }
-            studentLabel += " - 共 " + tasks.size() + " 件作品";
-
-            Paragraph studentTitle = new Paragraph(studentLabel)
-                    .setFontSize(16)
-                    .setBold()
-                    .setMarginTop(8)
-                    .setMarginBottom(12);
-            document.add(studentTitle);
-
-            document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-
-            // 导出该学生的每个作品
-            for (int i = 0; i < tasks.size(); i++) {
-                if (i > 0) {
-                    document.add(new AreaBreak());
-                }
-                exportTask(document, tasks.get(i), i + 1);
-            }
+            allTasks.addAll(tasks);
         }
 
-        // 页脚
-        document.add(new Paragraph("\n"));
-        document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-        Paragraph footer = new Paragraph("导出时间: " + java.time.LocalDateTime.now().toString().replace("T", " "))
-                .setFontSize(9)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.RIGHT);
-        document.add(footer);
-
-        document.close();
-        return baos.toByteArray();
+        return exportTasksAsZip(allTasks);
     }
 
     /**
      * 按多个班级导出所有学生作品
      */
     public byte[] exportByClasses(List<String> classIds) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PdfWriter writer = new PdfWriter(baos);
-        PdfDocument pdf = new PdfDocument(writer);
-        Document document = new Document(pdf, PageSize.A4);
-        document.setMargins(36, 36, 36, 36);
+        List<WorkTaskEntity> allTasks = new ArrayList<>();
 
-        PdfFont chineseFont = loadChineseFont();
-        document.setFont(chineseFont);
-
-        // 报告标题
-        Paragraph title = new Paragraph("班级作品分析报告")
-                .setFontSize(24)
-                .setBold()
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(8);
-        document.add(title);
-
-        Paragraph info = new Paragraph("共 " + classIds.size() + " 个班级")
-                .setFontSize(12)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(24);
-        document.add(info);
-
-        document.add(new LineSeparator(new SolidBorder(PRIMARY_COLOR, 1)));
-
-        boolean firstClass = true;
         for (String classId : classIds) {
             ClassEntity classEntity = classRepository.findById(classId).orElse(null);
             if (classEntity == null) continue;
 
             List<StudentEntity> students = studentRepository.findByClassIdWithWorksOrderByCreatedAtDesc(classId);
 
-            if (!firstClass) {
-                document.add(new AreaBreak());
-            }
-            firstClass = false;
-
-            // 班级标题
-            Paragraph classTitle = new Paragraph("班级: " + classEntity.getClassName())
-                    .setFontSize(18)
-                    .setBold()
-                    .setFontColor(PRIMARY_COLOR)
-                    .setMarginTop(8)
-                    .setMarginBottom(12);
-            document.add(classTitle);
-
-            document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-
-            // 按学生分组导出
-            boolean firstStudent = true;
             for (StudentEntity student : students) {
                 List<WorkTaskEntity> tasks = student.getStudentWorks().stream()
                         .map(StudentWorkEntity::getWorkTask)
                         .filter(t -> t != null)
                         .collect(Collectors.toList());
-
-                if (tasks.isEmpty()) continue;
-
-                if (!firstStudent) {
-                    document.add(new AreaBreak());
-                }
-                firstStudent = false;
-
-                // 学生信息头
-                String studentLabel = student.getStudentName();
-                if (student.getStudentNumber() != null && !student.getStudentNumber().isEmpty()) {
-                    studentLabel += " (" + student.getStudentNumber() + ")";
-                }
-                studentLabel += " - 共 " + tasks.size() + " 件作品";
-
-                Paragraph studentTitle = new Paragraph(studentLabel)
-                        .setFontSize(14)
-                        .setBold()
-                        .setMarginTop(8)
-                        .setMarginBottom(8);
-                document.add(studentTitle);
-
-                // 导出该学生的每个作品
-                for (int i = 0; i < tasks.size(); i++) {
-                    if (i > 0) {
-                        document.add(new AreaBreak());
-                    }
-                    exportTask(document, tasks.get(i), i + 1);
-                }
+                allTasks.addAll(tasks);
             }
         }
 
-        // 页脚
-        document.add(new Paragraph("\n"));
-        document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-        Paragraph footer = new Paragraph("导出时间: " + java.time.LocalDateTime.now().toString().replace("T", " "))
-                .setFontSize(9)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.RIGHT);
-        document.add(footer);
-
-        document.close();
-        return baos.toByteArray();
+        return exportTasksAsZip(allTasks);
     }
 
     /**
      * 按多个学生导出所有作品
      */
     public byte[] exportByStudents(List<String> studentIds) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PdfWriter writer = new PdfWriter(baos);
-        PdfDocument pdf = new PdfDocument(writer);
-        Document document = new Document(pdf, PageSize.A4);
-        document.setMargins(36, 36, 36, 36);
+        List<WorkTaskEntity> allTasks = new ArrayList<>();
 
-        PdfFont chineseFont = loadChineseFont();
-        document.setFont(chineseFont);
-
-        // 报告标题
-        Paragraph title = new Paragraph("学生作品分析报告")
-                .setFontSize(24)
-                .setBold()
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(8);
-        document.add(title);
-
-        Paragraph info = new Paragraph("共 " + studentIds.size() + " 名学生")
-                .setFontSize(12)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(24);
-        document.add(info);
-
-        document.add(new LineSeparator(new SolidBorder(PRIMARY_COLOR, 1)));
-
-        boolean firstStudent = true;
         for (String studentId : studentIds) {
             StudentEntity student = studentRepository.findByIdWithWorks(studentId);
             if (student == null) continue;
@@ -347,60 +122,10 @@ public class WorkExportService {
                     .map(StudentWorkEntity::getWorkTask)
                     .filter(t -> t != null)
                     .collect(Collectors.toList());
-
-            if (tasks.isEmpty()) continue;
-
-            if (!firstStudent) {
-                document.add(new AreaBreak());
-            }
-            firstStudent = false;
-
-            // 获取班级名称
-            String className = "";
-            ClassEntity classEntity = classRepository.findById(student.getClassId()).orElse(null);
-            if (classEntity != null) {
-                className = classEntity.getClassName();
-            }
-
-            // 学生信息头
-            String studentLabel = student.getStudentName();
-            if (student.getStudentNumber() != null && !student.getStudentNumber().isEmpty()) {
-                studentLabel += " (" + student.getStudentNumber() + ")";
-            }
-            if (!className.isEmpty()) {
-                studentLabel += " - " + className;
-            }
-            studentLabel += " - 共 " + tasks.size() + " 件作品";
-
-            Paragraph studentTitle = new Paragraph(studentLabel)
-                    .setFontSize(16)
-                    .setBold()
-                    .setMarginTop(8)
-                    .setMarginBottom(12);
-            document.add(studentTitle);
-
-            document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-
-            // 导出该学生的每个作品
-            for (int i = 0; i < tasks.size(); i++) {
-                if (i > 0) {
-                    document.add(new AreaBreak());
-                }
-                exportTask(document, tasks.get(i), i + 1);
-            }
+            allTasks.addAll(tasks);
         }
 
-        // 页脚
-        document.add(new Paragraph("\n"));
-        document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-        Paragraph footer = new Paragraph("导出时间: " + java.time.LocalDateTime.now().toString().replace("T", " "))
-                .setFontSize(9)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.RIGHT);
-        document.add(footer);
-
-        document.close();
-        return baos.toByteArray();
+        return exportTasksAsZip(allTasks);
     }
 
     /**
@@ -417,79 +142,7 @@ public class WorkExportService {
                 .filter(t -> t != null)
                 .collect(Collectors.toList());
 
-        // 获取班级名称
-        String className = "";
-        ClassEntity classEntity = classRepository.findById(student.getClassId()).orElse(null);
-        if (classEntity != null) {
-            className = classEntity.getClassName();
-        }
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PdfWriter writer = new PdfWriter(baos);
-        PdfDocument pdf = new PdfDocument(writer);
-        Document document = new Document(pdf, PageSize.A4);
-        document.setMargins(36, 36, 36, 36);
-
-        PdfFont chineseFont = loadChineseFont();
-        document.setFont(chineseFont);
-
-        // 报告标题
-        Paragraph title = new Paragraph("学生作品分析报告")
-                .setFontSize(24)
-                .setBold()
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(8);
-        document.add(title);
-
-        // 学生信息
-        String studentLabel = student.getStudentName();
-        if (student.getStudentNumber() != null && !student.getStudentNumber().isEmpty()) {
-            studentLabel += " (" + student.getStudentNumber() + ")";
-        }
-        Paragraph subtitle = new Paragraph(studentLabel)
-                .setFontSize(16)
-                .setFontColor(PRIMARY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(4);
-        document.add(subtitle);
-
-        if (!className.isEmpty()) {
-            Paragraph classInfo = new Paragraph(className)
-                    .setFontSize(12)
-                    .setFontColor(GRAY_COLOR)
-                    .setTextAlignment(TextAlignment.CENTER)
-                    .setMarginBottom(4);
-            document.add(classInfo);
-        }
-
-        Paragraph countInfo = new Paragraph("共 " + tasks.size() + " 件作品")
-                .setFontSize(12)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(24);
-        document.add(countInfo);
-
-        document.add(new LineSeparator(new SolidBorder(PRIMARY_COLOR, 1)));
-
-        // 导出每个作品
-        for (int i = 0; i < tasks.size(); i++) {
-            if (i > 0) {
-                document.add(new AreaBreak());
-            }
-            exportTask(document, tasks.get(i), i + 1);
-        }
-
-        // 页脚
-        document.add(new Paragraph("\n"));
-        document.add(new LineSeparator(new SolidBorder(GRAY_COLOR, 0.5f)));
-        Paragraph footer = new Paragraph("导出时间: " + java.time.LocalDateTime.now().toString().replace("T", " "))
-                .setFontSize(9)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.RIGHT);
-        document.add(footer);
-
-        document.close();
-        return baos.toByteArray();
+        return exportTasksAsZip(tasks);
     }
 
     /**
@@ -507,13 +160,13 @@ public class WorkExportService {
                 .filter(t -> t != null)
                 .collect(Collectors.toList());
 
-        // 获取班级名称
-        String className = "";
-        ClassEntity classEntity = classRepository.findById(student.getClassId()).orElse(null);
-        if (classEntity != null) {
-            className = classEntity.getClassName();
-        }
+        return exportTasksAsZip(tasks);
+    }
 
+    /**
+     * 生成单个作品的 PDF
+     */
+    private byte[] generateSingleTaskPdf(WorkTaskEntity task) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         PdfWriter writer = new PdfWriter(baos);
         PdfDocument pdf = new PdfDocument(writer);
@@ -523,51 +176,7 @@ public class WorkExportService {
         PdfFont chineseFont = loadChineseFont();
         document.setFont(chineseFont);
 
-        // 报告标题
-        Paragraph title = new Paragraph("学生作品分析报告")
-                .setFontSize(24)
-                .setBold()
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(8);
-        document.add(title);
-
-        // 学生信息
-        String studentLabel = student.getStudentName();
-        if (student.getStudentNumber() != null && !student.getStudentNumber().isEmpty()) {
-            studentLabel += " (" + student.getStudentNumber() + ")";
-        }
-        Paragraph subtitle = new Paragraph(studentLabel)
-                .setFontSize(16)
-                .setFontColor(PRIMARY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(4);
-        document.add(subtitle);
-
-        if (!className.isEmpty()) {
-            Paragraph classInfo = new Paragraph(className)
-                    .setFontSize(12)
-                    .setFontColor(GRAY_COLOR)
-                    .setTextAlignment(TextAlignment.CENTER)
-                    .setMarginBottom(4);
-            document.add(classInfo);
-        }
-
-        Paragraph countInfo = new Paragraph("共 " + tasks.size() + " 件作品（已选）")
-                .setFontSize(12)
-                .setFontColor(GRAY_COLOR)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(24);
-        document.add(countInfo);
-
-        document.add(new LineSeparator(new SolidBorder(PRIMARY_COLOR, 1)));
-
-        // 导出每个作品
-        for (int i = 0; i < tasks.size(); i++) {
-            if (i > 0) {
-                document.add(new AreaBreak());
-            }
-            exportTask(document, tasks.get(i), i + 1);
-        }
+        exportTask(document, task, 1);
 
         // 页脚
         document.add(new Paragraph("\n"));
@@ -580,6 +189,44 @@ public class WorkExportService {
 
         document.close();
         return baos.toByteArray();
+    }
+
+    /**
+     * 获取作品文件名（不含扩展名）
+     */
+    private String getTaskFileName(WorkTaskEntity task) {
+        String fileName = task.getFileName();
+        if (fileName == null || fileName.isEmpty()) {
+            return task.getTaskId();
+        }
+        // 去掉扩展名
+        int lastDot = fileName.lastIndexOf('.');
+        if (lastDot > 0) {
+            return fileName.substring(0, lastDot);
+        }
+        return fileName;
+    }
+
+    /**
+     * 将多个作品打包成 ZIP，每个作品一个 PDF
+     */
+    private byte[] exportTasksAsZip(List<WorkTaskEntity> tasks) throws IOException {
+        ByteArrayOutputStream zipBaos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(zipBaos)) {
+            for (int i = 0; i < tasks.size(); i++) {
+                WorkTaskEntity task = tasks.get(i);
+                byte[] pdfBytes = generateSingleTaskPdf(task);
+
+                String baseName = getTaskFileName(task);
+                // 处理重名：添加序号
+                String zipEntryName = baseName + ".pdf";
+
+                zos.putNextEntry(new ZipEntry(zipEntryName));
+                zos.write(pdfBytes);
+                zos.closeEntry();
+            }
+        }
+        return zipBaos.toByteArray();
     }
 
     private void exportTask(Document document, WorkTaskEntity task, int index) throws IOException {
