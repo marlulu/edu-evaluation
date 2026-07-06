@@ -95,3 +95,121 @@ export async function removeWorkFromStudent(studentId: string, taskId: string): 
   const response = await axios.delete<{ success: boolean }>(`${baseUrl}/students/${studentId}/works/${taskId}`);
   return response.data;
 }
+
+// 批量导出
+export async function exportClassWorksToPdf(classId: string): Promise<void> {
+  const response = await fetch(`/api/work/export/pdf/class/${classId}`, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    throw new Error('导出失败');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `班级作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+export async function exportStudentWorksToPdf(studentId: string): Promise<void> {
+  const response = await fetch(`/api/work/export/pdf/student/${studentId}`, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    try {
+      const err = await response.json();
+      throw new Error(err.error || '导出失败');
+    } catch {
+      throw new Error('导出失败');
+    }
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `学生作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+export async function exportClassesWorksToPdf(classIds: string[]): Promise<void> {
+  const response = await fetch(`/api/work/export/pdf/classes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ classIds }),
+  });
+
+  if (!response.ok) {
+    throw new Error('导出失败');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `班级作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+export async function exportStudentsWorksToPdf(studentIds: string[]): Promise<void> {
+  const response = await fetch(`/api/work/export/pdf/students`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ studentIds }),
+  });
+
+  if (!response.ok) {
+    throw new Error('导出失败');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `学生作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+export async function exportStudentSelectedWorksToPdf(studentId: string, taskIds: string[]): Promise<void> {
+  const response = await fetch(`/api/work/export/pdf/student/${studentId}/selected`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ taskIds }),
+  });
+
+  if (!response.ok) {
+    throw new Error('导出失败');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `学生作品报告_${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
