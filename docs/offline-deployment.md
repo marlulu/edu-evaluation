@@ -34,24 +34,26 @@
 
 | 软件 | 版本要求 | 说明 |
 |------|----------|------|
-| 操作系统 | Ubuntu 20.04+ / CentOS 7+ / Debian 11+ | 推荐 Ubuntu 22.04 LTS |
+| 操作系统 | Ubuntu 20.04+ / CentOS 7+ / Debian 11+ / Windows 10+ | 推荐 Ubuntu 22.04 LTS |
 | Docker | 20.10+ | 容器运行时 |
 | Docker Compose | 2.0+ | 容器编排 |
 
 ### 1.3 检查环境
 
+**🐧 Linux / macOS：**
 ```bash
-# 检查 Docker 版本
 docker --version
-
-# 检查 Docker Compose 版本
 docker compose version
-
-# 检查磁盘空间
 df -h
-
-# 检查内存
 free -h
+```
+
+**🪟 Windows PowerShell：**
+```powershell
+docker --version
+docker compose version
+Get-PSDrive -Name C | Select-Object Used, Free
+Get-ComputerInfo | Select-Object CsTotalPhysicalMemory
 ```
 
 ---
@@ -64,6 +66,7 @@ free -h
 
 只需拉取**运行时**基础镜像，构建工具镜像（maven、node、python）不需要。
 
+**🐧 Linux / macOS：**
 ```bash
 # 创建镜像列表
 cat > images.txt << 'EOF'
@@ -81,25 +84,34 @@ while read image; do
 done < images.txt
 ```
 
+**🪟 Windows PowerShell：**
+```powershell
+# 拉取所有镜像
+$images = @(
+    "mysql:8.4",
+    "redis:7-alpine",
+    "minio/minio:latest",
+    "rabbitmq:4-management",
+    "nginx:alpine"
+)
+
+foreach ($image in $images) {
+    Write-Host "Pulling $image..."
+    docker pull $image
+}
+```
+
 ### 2.2 构建应用镜像
 
+**🐧 Linux / macOS / 🪟 Windows（通用）：**
 ```bash
-cd edu-evaluation
-
-# 构建所有服务镜像（在 deploy 目录下执行）
-cd deploy
+cd edu-evaluation/deploy
 docker compose build
-
-# 或者单独构建
-# docker build -t deploy-backend ../backend
-# docker build -t deploy-ai-worker ../ai-worker
-# docker build -t deploy-frontend ../frontend
 ```
 
 ### 2.3 导出所有镜像
 
-**Linux / macOS / Git Bash：**
-
+**🐧 Linux / macOS：**
 ```bash
 mkdir -p docker-images
 
@@ -110,14 +122,13 @@ docker save minio/minio:latest | gzip > docker-images/minio-latest.tar.gz
 docker save rabbitmq:4-management | gzip > docker-images/rabbitmq-4-management.tar.gz
 docker save nginx:alpine | gzip > docker-images/nginx-alpine.tar.gz
 
-# 导出应用镜像（镜像名与 docker-compose.yml 中一致）
+# 导出应用镜像
 docker save deploy-backend | gzip > docker-images/edu-backend.tar.gz
 docker save deploy-ai-worker | gzip > docker-images/edu-ai-worker.tar.gz
 docker save deploy-frontend | gzip > docker-images/edu-frontend.tar.gz
 ```
 
-**Windows PowerShell：**
-
+**🪟 Windows PowerShell：**
 ```powershell
 New-Item -ItemType Directory -Force -Path docker-images
 
@@ -138,8 +149,7 @@ docker save deploy-frontend -o docker-images/edu-frontend.tar
 
 只需打包 **Docker 镜像 + 部署配置文件**，不需要完整源码。
 
-**Linux / macOS / Git Bash：**
-
+**🐧 Linux / macOS：**
 ```bash
 # 回到项目根目录
 cd ..
@@ -150,15 +160,14 @@ mkdir -p edu-evaluation-offline/docker-images
 # 复制镜像文件
 cp deploy/docker-images/*.tar.gz edu-evaluation-offline/docker-images/
 
-# 复制部署配置文件（只需这些）
+# 复制部署配置文件
 cp -r deploy/ edu-evaluation-offline/deploy/
 
 # 打包最终离线包
 tar czf edu-evaluation-offline-$(date +%Y%m%d).tar.gz edu-evaluation-offline/
 ```
 
-**Windows PowerShell：**
-
+**🪟 Windows PowerShell：**
 ```powershell
 # 回到项目根目录
 cd ..
@@ -169,14 +178,11 @@ New-Item -ItemType Directory -Force -Path edu-evaluation-offline/docker-images
 # 复制镜像文件
 Copy-Item deploy/docker-images/*.tar edu-evaluation-offline/docker-images/
 
-# 复制部署配置文件（只需这些）
+# 复制部署配置文件
 Copy-Item -Recurse deploy/ edu-evaluation-offline/deploy/
 
-# 打包最终离线包（使用 tar）
+# 打包最终离线包
 tar -czf "edu-evaluation-offline-$(Get-Date -Format 'yyyyMMdd').tar.gz" edu-evaluation-offline/
-
-# 检查包大小
-Get-Item "edu-evaluation-offline-*.tar.gz" | Select-Object Name, @{N='Size(MB)';E={[math]::Round($_.Length/1MB,2)}}
 ```
 
 > 💡 **为什么不需要源码？**
@@ -190,6 +196,7 @@ Get-Item "edu-evaluation-offline-*.tar.gz" | Select-Object Name, @{N='Size(MB)';
 
 > 📍 **执行位置**：本地机器 → 服务器
 
+**🐧 Linux / macOS：**
 ```bash
 # 方式 1: SCP（推荐）
 scp edu-evaluation-offline-*.tar.gz user@server-ip:/opt/
@@ -199,7 +206,15 @@ rsync -avz --progress edu-evaluation-offline-*.tar.gz user@server-ip:/opt/
 
 # 方式 3: USB/移动硬盘
 cp edu-evaluation-offline-*.tar.gz /media/usb/
-# 插到服务器上复制到 /opt/
+```
+
+**🪟 Windows PowerShell：**
+```powershell
+# 方式 1: SCP（推荐）
+scp edu-evaluation-offline-*.tar.gz user@server-ip:/opt/
+
+# 方式 2: USB/移动硬盘
+Copy-Item edu-evaluation-offline-*.tar.gz E:\
 ```
 
 ---
@@ -210,24 +225,20 @@ cp edu-evaluation-offline-*.tar.gz /media/usb/
 
 ### 4.1 安装 Docker（如未安装）
 
-**Ubuntu/Debian：**
+**🐧 Ubuntu/Debian：**
 ```bash
-# 如果服务器有离线 Docker 安装包
 tar xzf docker-offline-install.tar.gz
 cd docker-offline
 sudo dpkg -i containerd.io_*.deb docker-ce_*.deb \
   docker-ce-cli_*.deb docker-compose-plugin_*.deb
 
-# 启动 Docker
 sudo systemctl start docker
 sudo systemctl enable docker
-
-# 将当前用户加入 docker 组
 sudo usermod -aG docker $USER
 # 重新登录生效
 ```
 
-**CentOS/RHEL：**
+**🐧 CentOS/RHEL：**
 ```bash
 tar xzf docker-offline-install.tar.gz
 cd docker-offline
@@ -239,18 +250,31 @@ sudo systemctl enable docker
 sudo usermod -aG docker $USER
 ```
 
+**🪟 Windows Server：**
+```powershell
+# Windows Server 需要预先安装 Docker Desktop 或 Docker Engine
+# 参考：https://docs.docker.com/engine/install/windows-server/
+```
+
 ### 4.2 解压离线包
 
+**🐧 Linux：**
 ```bash
 cd /opt
 tar xzf edu-evaluation-offline-*.tar.gz
 cd edu-evaluation-offline
 ```
 
+**🪟 Windows PowerShell：**
+```powershell
+cd C:\
+tar -xzf edu-evaluation-offline-*.tar.gz
+cd edu-evaluation-offline
+```
+
 ### 4.3 加载 Docker 镜像
 
-**Linux / macOS / Git Bash：**
-
+**🐧 Linux：**
 ```bash
 # 加载所有镜像
 for image in docker-images/*.tar.gz; do
@@ -262,10 +286,9 @@ done
 docker images | grep -E "mysql|redis|minio|rabbitmq|nginx|edu-|deploy-"
 ```
 
-**Windows PowerShell：**
-
+**🪟 Windows PowerShell：**
 ```powershell
-# 加载所有 .tar 镜像
+# 加载所有镜像
 Get-ChildItem docker-images/*.tar | ForEach-Object {
     Write-Host "Loading $($_.Name)..."
     docker load -i $_.FullName
@@ -277,10 +300,9 @@ docker images | Select-String -Pattern "mysql|redis|minio|rabbitmq|nginx|edu-|de
 
 ### 4.4 创建环境配置文件
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
-cd edu-evaluation/deploy
-
-# 从模板创建配置文件
+cd deploy
 cp .env.example .env
 ```
 
@@ -317,6 +339,7 @@ MODEL_PROVIDER_DRIVER=openai-compatible
 
 ### 4.5 启动服务
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
 # 启动所有服务
 docker compose up -d
@@ -332,6 +355,7 @@ docker compose logs -f
 
 首次部署需要创建存储桶：
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
 # 等待 MinIO 启动
 sleep 15
@@ -350,6 +374,7 @@ docker exec edu-minio mc mb local/coursework-submissions --ignore-existing
 
 ### 5.1 SSL 证书配置（可选）
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
 # 将证书文件放入 nginx/ssl 目录
 cp your-cert.pem nginx/ssl/cert.pem
@@ -379,8 +404,8 @@ vi nginx/conf.d/default.conf
 
 ### 6.1 检查服务状态
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
-# 查看所有容器状态
 docker compose ps
 
 # 预期输出（所有服务应为 healthy 或 running）：
@@ -397,15 +422,18 @@ docker compose ps
 
 ### 6.2 健康检查
 
+**🐧 Linux：**
 ```bash
-# 前端
 curl -s http://localhost/
-
-# 后端 API
 curl -s http://localhost:8080/actuator/health
-
-# AI Worker
 curl -s http://localhost:8000/health
+```
+
+**🪟 Windows PowerShell：**
+```powershell
+Invoke-WebRequest -Uri http://localhost/ -UseBasicParsing
+Invoke-WebRequest -Uri http://localhost:8080/actuator/health -UseBasicParsing
+Invoke-WebRequest -Uri http://localhost:8000/health -UseBasicParsing
 ```
 
 ### 6.3 访问系统
@@ -447,15 +475,15 @@ ALTER TABLE student_works ADD COLUMN feedback TEXT;
 
 重新打包并部署后，重启后端服务自动执行：
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
-# 服务器：重启后端
 docker compose restart backend
 ```
 
 ### 7.3 查看迁移状态
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
-# 进入 MySQL 查看
 docker exec -it edu-mysql mysql -u edu -p edu_evaluation
 
 # 查看迁移历史
@@ -472,10 +500,7 @@ SELECT * FROM flyway_schema_history ORDER BY installed_rank;
 
 **解决**：
 ```bash
-# 清理 Docker 缓存
 docker system prune -a
-
-# 或扩大 /var/lib/docker 磁盘空间
 ```
 
 ### 8.2 容器启动失败
@@ -484,10 +509,9 @@ docker system prune -a
 
 **解决**：
 ```bash
-# 查看容器日志
 docker compose logs <service_name>
 
-# 按顺序重启（确保依赖顺序）
+# 按顺序重启
 docker compose restart mysql
 sleep 10
 docker compose restart redis rabbitmq minio
@@ -501,13 +525,8 @@ docker compose restart ai-worker backend nginx
 
 **解决**：
 ```bash
-# 检查 MySQL 是否启动
 docker compose ps mysql
-
-# 检查密码配置
 cat .env | grep MYSQL
-
-# 测试连接
 docker exec edu-mysql mysql -u edu -p$(grep MYSQL_PASSWORD .env | cut -d= -f2) -e "SELECT 1;"
 ```
 
@@ -517,14 +536,9 @@ docker exec edu-mysql mysql -u edu -p$(grep MYSQL_PASSWORD .env | cut -d= -f2) -
 
 **解决**：
 ```bash
-# 进入 MySQL 修复
 docker exec -it edu-mysql mysql -u root -p edu_evaluation
-
-# 清除 Flyway 历史（谨慎操作，会导致重新执行所有迁移）
 TRUNCATE TABLE flyway_schema_history;
 EXIT;
-
-# 重启后端
 docker compose restart backend
 ```
 
@@ -532,13 +546,8 @@ docker compose restart backend
 
 **解决**：
 ```bash
-# 检查配置
 cat .env | grep MODEL
-
-# 测试连通性
 docker exec edu-ai-worker curl -s $MODEL_API_BASE_URL/models
-
-# 查看日志
 docker compose logs ai-worker
 ```
 
@@ -546,17 +555,20 @@ docker compose logs ai-worker
 
 **问题**：`Bind for 0.0.0.0:80 failed: port is already allocated`
 
-**解决**：
+**🐧 Linux：**
 ```bash
-# 查找占用端口的进程
 lsof -i :80
-# 或
-netstat -tulpn | grep :80
+sudo systemctl stop nginx
+```
 
-# 停止占用端口的服务
-sudo systemctl stop nginx  # 如果有本地 nginx
+**🪟 Windows PowerShell：**
+```powershell
+netstat -ano | findstr :80
+# 停止占用端口的进程
+```
 
-# 或修改 .env 中的端口
+**通用解决**：修改 `.env` 中的端口
+```bash
 APP_PORT=8080
 ```
 
@@ -565,7 +577,6 @@ APP_PORT=8080
 在 `backend/Dockerfile` 中已配置阿里云镜像，如未生效：
 
 ```bash
-# 检查 Dockerfile 中是否有以下配置
 RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<'EOF'
 <settings>
   <mirrors>
@@ -586,6 +597,7 @@ EOF
 
 ### 9.1 服务管理
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
 # 启动服务
 docker compose up -d
@@ -611,83 +623,66 @@ docker compose logs -f backend
 
 ### 9.2 数据备份
 
+**🐧 Linux：**
 ```bash
-# 备份数据库
 docker exec edu-mysql mysqldump -u root -p edu_evaluation > backup_$(date +%Y%m%d).sql
-
-# 备份 MinIO 数据
 docker cp edu-minio:/data ./minio-backup-$(date +%Y%m%d)
-
-# 备份 Docker 卷
 docker run --rm -v edu-evaluation_mysql_data:/data -v $(pwd):/backup \
   alpine tar czf /backup/mysql-data-$(date +%Y%m%d).tar.gz /data
 ```
 
+**🪟 Windows PowerShell：**
+```powershell
+docker exec edu-mysql mysqldump -u root -p edu_evaluation > backup_$(Get-Date -Format 'yyyyMMdd').sql
+docker cp edu-minio:/data ./minio-backup-$(Get-Date -Format 'yyyyMMdd')
+```
+
 ### 9.3 数据恢复
 
+**🐧 Linux：**
 ```bash
-# 恢复数据库
 docker exec -i edu-mysql mysql -u root -p edu_evaluation < backup_20260706.sql
-
-# 恢复 Docker 卷
 docker run --rm -v edu-evaluation_mysql_data:/data -v $(pwd):/backup \
   alpine tar xzf /backup/mysql-data-20260706.tar.gz -C /
+```
+
+**🪟 Windows PowerShell：**
+```powershell
+Get-Content backup_20260706.sql | docker exec -i edu-mysql mysql -u root -p edu_evaluation
 ```
 
 ### 9.4 更新系统
 
 在**本地**重新打包镜像，传输到服务器后：
 
-**Linux / macOS / Git Bash：**
-
+**🐧 Linux：**
 ```bash
-# 服务器：停止服务
 docker compose down
-
-# 服务器：加载新镜像
 for image in docker-images/*.tar.gz; do
   gunzip -c "$image" | docker load
 done
-
-# 服务器：启动服务
 docker compose up -d
-
-# 服务器：清理旧镜像
 docker image prune -a
 ```
 
-**Windows PowerShell：**
-
+**🪟 Windows PowerShell：**
 ```powershell
-# 服务器：停止服务
 docker compose down
-
-# 服务器：加载新镜像
 Get-ChildItem docker-images/*.tar | ForEach-Object {
     Write-Host "Loading $($_.Name)..."
     docker load -i $_.FullName
 }
-
-# 服务器：启动服务
 docker compose up -d
-
-# 服务器：清理旧镜像
 docker image prune -a
 ```
 
 ### 9.5 监控命令
 
+**🐧 Linux / 🪟 Windows（通用）：**
 ```bash
-# 查看资源使用
 docker stats
-
-# 查看磁盘使用
 docker system df
-
-# 查看容器详情
 docker inspect edu-backend
-
-# 进入容器调试
 docker exec -it edu-backend sh
 docker exec -it edu-ai-worker bash
 ```
@@ -701,7 +696,7 @@ docker exec -it edu-ai-worker bash
 ```
 edu-evaluation-offline-20260706.tar.gz
 └── edu-evaluation-offline/
-    ├── docker-images/                  # Docker 镜像文件（本地打包）
+    ├── docker-images/                  # Docker 镜像文件
     │   ├── mysql-8.4.tar.gz
     │   ├── redis-7-alpine.tar.gz
     │   ├── minio-latest.tar.gz
@@ -711,10 +706,10 @@ edu-evaluation-offline-20260706.tar.gz
     │   ├── edu-ai-worker.tar.gz
     │   └── edu-frontend.tar.gz
     └── deploy/                         # 部署配置文件
-        ├── docker-compose.yml          # 容器编排配置
-        ├── .env.example                # 环境变量模板
-        ├── mysql/                      # MySQL 初始化脚本
-        └── nginx/                      # Nginx 配置
+        ├── docker-compose.yml
+        ├── .env.example
+        ├── mysql/
+        └── nginx/
 ```
 
 ### B. 操作流程总结
@@ -760,9 +755,9 @@ edu-evaluation-offline-20260706.tar.gz
 
 ### D. 故障排查清单
 
-- [ ] Docker 服务是否运行：`systemctl status docker`
-- [ ] 磁盘空间是否充足：`df -h`
-- [ ] 端口是否被占用：`netstat -tlnp | grep :80`
+- [ ] Docker 服务是否运行：`systemctl status docker`（Linux）或检查 Docker Desktop（Windows）
+- [ ] 磁盘空间是否充足：`df -h`（Linux）或 `Get-PSDrive`（Windows）
+- [ ] 端口是否被占用：`netstat -tlnp | grep :80`（Linux）或 `netstat -ano | findstr :80`（Windows）
 - [ ] 环境变量是否正确：`cat .env`
 - [ ] 所有容器是否健康：`docker compose ps`
 - [ ] 数据库是否可连接：`docker exec edu-mysql mysql -u edu -p -e "SELECT 1"`
@@ -771,6 +766,6 @@ edu-evaluation-offline-20260706.tar.gz
 
 ---
 
-> 📝 **文档版本**: v3.1
+> 📝 **文档版本**: v3.2
 > 📅 **更新日期**: 2026-07-06
 > 👤 **维护者**: 开发团队
