@@ -141,6 +141,8 @@ docker save deploy-frontend -o docker-images/edu-frontend.tar
 
 ### 2.4 打包完整离线包
 
+**Linux / macOS / Git Bash：**
+
 ```bash
 # 回到项目根目录
 cd ..
@@ -165,9 +167,29 @@ rsync -av \
 
 # 打包最终离线包
 tar czf edu-evaluation-offline-$(date +%Y%m%d).tar.gz edu-evaluation-offline/
+```
+
+**Windows PowerShell：**
+
+```powershell
+# 回到项目根目录
+cd ..
+
+# 创建离线包目录
+New-Item -ItemType Directory -Force -Path edu-evaluation-offline/docker-images
+
+# 复制镜像文件
+Copy-Item deploy/docker-images/*.tar edu-evaluation-offline/docker-images/
+
+# 复制项目源码（排除构建产物）
+$exclude = @('node_modules', 'target', '.git', '__pycache__', '.idea', '.vscode', 'data')
+robocopy . edu-evaluation-offline/edu-evaluation /E /XD $exclude /XF "*.tar.gz"
+
+# 打包最终离线包（使用 tar）
+tar -czf "edu-evaluation-offline-$(Get-Date -Format 'yyyyMMdd').tar.gz" edu-evaluation-offline/
 
 # 检查包大小
-ls -lh edu-evaluation-offline-*.tar.gz
+Get-Item "edu-evaluation-offline-*.tar.gz" | Select-Object Name, @{N='Size(MB)';E={[math]::Round($_.Length/1MB,2)}}
 ```
 
 ---
