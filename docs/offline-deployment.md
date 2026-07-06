@@ -173,17 +173,17 @@ tar czf edu-evaluation-offline-$(date +%Y%m%d).tar.gz edu-evaluation-offline/
 cd ..
 
 # 创建离线包目录
-New-Item -ItemType Directory -Force -Path edu-evaluation-offline/docker-images
+New-Item -ItemType Directory -Force -Path edu-evaluation-offline\docker-images
 
 # 复制镜像文件
-Copy-Item deploy/docker-images/*.tar edu-evaluation-offline/docker-images/
+Copy-Item deploy\docker-images\*.tar edu-evaluation-offline\docker-images\
 
 # 复制部署配置文件
-Copy-Item -Recurse deploy/ edu-evaluation-offline/deploy/
+Copy-Item -Recurse deploy edu-evaluation-offline\
 
 # 打包最终离线包
 $date = Get-Date -Format 'yyyyMMdd'
-tar -czf "edu-evaluation-offline-$date.tar.gz" edu-evaluation-offline/
+tar -czf "edu-evaluation-offline-$date.tar.gz" edu-evaluation-offline
 ```
 
 > 💡 **为什么不需要源码？**
