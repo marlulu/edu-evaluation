@@ -100,6 +100,8 @@ docker compose build
 
 ### 2.3 导出所有镜像
 
+**Linux / macOS / Git Bash：**
+
 ```bash
 mkdir -p docker-images
 
@@ -114,6 +116,37 @@ docker save nginx:alpine | gzip > docker-images/nginx-alpine.tar.gz
 docker save deploy-backend | gzip > docker-images/edu-backend.tar.gz
 docker save deploy-ai-worker | gzip > docker-images/edu-ai-worker.tar.gz
 docker save deploy-frontend | gzip > docker-images/edu-frontend.tar.gz
+```
+
+**Windows PowerShell：**
+
+```powershell
+New-Item -ItemType Directory -Force -Path docker-images
+
+# 导出基础镜像（使用 tar 压缩）
+docker save mysql:8.4 -o docker-images/mysql-8.4.tar
+docker save redis:7-alpine -o docker-images/redis-7-alpine.tar
+docker save minio/minio:latest -o docker-images/minio-latest.tar
+docker save rabbitmq:4-management -o docker-images/rabbitmq-4-management.tar
+docker save nginx:alpine -o docker-images/nginx-alpine.tar
+
+# 导出应用镜像
+docker save deploy-backend -o docker-images/edu-backend.tar
+docker save deploy-ai-worker -o docker-images/edu-ai-worker.tar
+docker save deploy-frontend -o docker-images/edu-frontend.tar
+
+# 压缩（需要安装 7-Zip 或使用 tar）
+# 方式 1: 使用 tar（Windows 10+ 自带）
+Get-ChildItem docker-images/*.tar | ForEach-Object {
+    tar -czf "$($_.FullName).gz" $_.FullName
+    Remove-Item $_.FullName
+}
+
+# 方式 2: 使用 7-Zip（需先安装）
+# Get-ChildItem docker-images/*.tar | ForEach-Object {
+#     7z a "$($_.FullName).gz" $_.FullName
+#     Remove-Item $_.FullName
+# }
 ```
 
 ### 2.4 打包完整离线包
@@ -212,6 +245,8 @@ cd edu-evaluation-offline
 
 ### 4.3 加载 Docker 镜像
 
+**Linux / macOS / Git Bash：**
+
 ```bash
 # 加载所有镜像
 for image in docker-images/*.tar.gz; do
@@ -221,6 +256,23 @@ done
 
 # 验证镜像已加载
 docker images | grep -E "mysql|redis|minio|rabbitmq|nginx|edu-|deploy-"
+```
+
+**Windows PowerShell：**
+
+```powershell
+# 加载所有镜像
+Get-ChildItem docker-images/*.tar.gz | ForEach-Object {
+    Write-Host "Loading $($_.Name)..."
+    # 先解压再加载
+    tar -xzf $_.FullName -C docker-images/
+    $tarFile = $_.FullName -replace '\.gz$',''
+    docker load -i $tarFile
+    Remove-Item $tarFile
+}
+
+# 验证镜像已加载
+docker images | Select-String -Pattern "mysql|redis|minio|rabbitmq|nginx|edu-|deploy-"
 ```
 
 ### 4.4 创建环境配置文件
@@ -586,6 +638,8 @@ docker run --rm -v edu-evaluation_mysql_data:/data -v $(pwd):/backup \
 
 在**本地**重新打包镜像，传输到服务器后：
 
+**Linux / macOS / Git Bash：**
+
 ```bash
 # 服务器：停止服务
 docker compose down
@@ -594,6 +648,28 @@ docker compose down
 for image in docker-images/*.tar.gz; do
   gunzip -c "$image" | docker load
 done
+
+# 服务器：启动服务
+docker compose up -d
+
+# 服务器：清理旧镜像
+docker image prune -a
+```
+
+**Windows PowerShell：**
+
+```powershell
+# 服务器：停止服务
+docker compose down
+
+# 服务器：加载新镜像
+Get-ChildItem docker-images/*.tar.gz | ForEach-Object {
+    Write-Host "Loading $($_.Name)..."
+    tar -xzf $_.FullName -C docker-images/
+    $tarFile = $_.FullName -replace '\.gz$',''
+    docker load -i $tarFile
+    Remove-Item $tarFile
+}
 
 # 服务器：启动服务
 docker compose up -d
