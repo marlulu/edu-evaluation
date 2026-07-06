@@ -123,7 +123,7 @@ docker save deploy-frontend | gzip > docker-images/edu-frontend.tar.gz
 ```powershell
 New-Item -ItemType Directory -Force -Path docker-images
 
-# 导出基础镜像（使用 tar 压缩）
+# 导出基础镜像
 docker save mysql:8.4 -o docker-images/mysql-8.4.tar
 docker save redis:7-alpine -o docker-images/redis-7-alpine.tar
 docker save minio/minio:latest -o docker-images/minio-latest.tar
@@ -135,18 +135,8 @@ docker save deploy-backend -o docker-images/edu-backend.tar
 docker save deploy-ai-worker -o docker-images/edu-ai-worker.tar
 docker save deploy-frontend -o docker-images/edu-frontend.tar
 
-# 压缩（需要安装 7-Zip 或使用 tar）
-# 方式 1: 使用 tar（Windows 10+ 自带）
-Get-ChildItem docker-images/*.tar | ForEach-Object {
-    tar -czf "$($_.FullName).gz" $_.FullName
-    Remove-Item $_.FullName
-}
-
-# 方式 2: 使用 7-Zip（需先安装）
-# Get-ChildItem docker-images/*.tar | ForEach-Object {
-#     7z a "$($_.FullName).gz" $_.FullName
-#     Remove-Item $_.FullName
-# }
+# （可选）压缩以减小体积，加快传输
+# tar -czf docker-images.tar.gz docker-images/
 ```
 
 ### 2.4 打包完整离线包
@@ -261,14 +251,10 @@ docker images | grep -E "mysql|redis|minio|rabbitmq|nginx|edu-|deploy-"
 **Windows PowerShell：**
 
 ```powershell
-# 加载所有镜像
-Get-ChildItem docker-images/*.tar.gz | ForEach-Object {
+# 加载所有 .tar 镜像
+Get-ChildItem docker-images/*.tar | ForEach-Object {
     Write-Host "Loading $($_.Name)..."
-    # 先解压再加载
-    tar -xzf $_.FullName -C docker-images/
-    $tarFile = $_.FullName -replace '\.gz$',''
-    docker load -i $tarFile
-    Remove-Item $tarFile
+    docker load -i $_.FullName
 }
 
 # 验证镜像已加载
@@ -663,12 +649,9 @@ docker image prune -a
 docker compose down
 
 # 服务器：加载新镜像
-Get-ChildItem docker-images/*.tar.gz | ForEach-Object {
+Get-ChildItem docker-images/*.tar | ForEach-Object {
     Write-Host "Loading $($_.Name)..."
-    tar -xzf $_.FullName -C docker-images/
-    $tarFile = $_.FullName -replace '\.gz$',''
-    docker load -i $tarFile
-    Remove-Item $tarFile
+    docker load -i $_.FullName
 }
 
 # 服务器：启动服务
