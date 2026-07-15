@@ -56,19 +56,11 @@ spring:
           min-idle: 2
           max-wait: 3000
 
-  # RabbitMQ 配置
-  rabbitmq:
-    host: ${SPRING_RABBITMQ_HOST:localhost}
-    port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:edu}
-    password: ${SPRING_RABBITMQ_PASSWORD:password}
-    connection-timeout: 10000
-
   # 文件上传限制
   servlet:
     multipart:
-      max-file-size: 500MB
-      max-request-size: 500MB
+      max-file-size: -1
+      max-request-size: -1
 
 # Actuator 健康检查
 management:
@@ -82,11 +74,11 @@ management:
   health:
     redis:
       enabled: true
-    rabbit:
-      enabled: true
 
 # 应用配置
 app:
+  env:
+    path: ${APP_ENV_PATH:/app/.env}
   upload-dir: data/uploads
   storage:
     endpoint: ${APP_STORAGE_ENDPOINT:http://localhost:9000}

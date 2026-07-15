@@ -17,6 +17,7 @@
 - [7. 数据库迁移（Flyway）](#7-数据库迁移flyway)
 - [8. 常见问题](#8-常见问题)
 - [9. 维护命令](#9-维护命令)
+- [10. 前后端单独打包部署](#10-前后端单独打包部署)
 
 ---
 
@@ -73,7 +74,6 @@ cat > images.txt << 'EOF'
 mysql:8.4
 redis:7-alpine
 minio/minio:latest
-rabbitmq:4-management
 nginx:alpine
 EOF
 
@@ -91,7 +91,6 @@ $images = @(
     "mysql:8.4",
     "redis:7-alpine",
     "minio/minio:latest",
-    "rabbitmq:4-management",
     "nginx:alpine"
 )
 
@@ -119,7 +118,6 @@ mkdir -p docker-images
 docker save mysql:8.4 | gzip > docker-images/mysql-8.4.tar.gz
 docker save redis:7-alpine | gzip > docker-images/redis-7-alpine.tar.gz
 docker save minio/minio:latest | gzip > docker-images/minio-latest.tar.gz
-docker save rabbitmq:4-management | gzip > docker-images/rabbitmq-4-management.tar.gz
 docker save nginx:alpine | gzip > docker-images/nginx-alpine.tar.gz
 
 # 导出应用镜像
@@ -136,7 +134,6 @@ New-Item -ItemType Directory -Force -Path docker-images
 docker save mysql:8.4 -o docker-images/mysql-8.4.tar
 docker save redis:7-alpine -o docker-images/redis-7-alpine.tar
 docker save minio/minio:latest -o docker-images/minio-latest.tar
-docker save rabbitmq:4-management -o docker-images/rabbitmq-4-management.tar
 docker save nginx:alpine -o docker-images/nginx-alpine.tar
 
 # 导出应用镜像
@@ -212,7 +209,7 @@ cp edu-evaluation-offline-*.tar.gz /media/usb/
 **🪟 Windows PowerShell：**
 ```powershell
 # 方式 1: SCP（推荐）
-scp edu-evaluation-offline-*.tar.gz user@server-ip:/opt/
+scp edu-evaluation-offline-*.tar.gz user@47.108.223.229:22:/www/wwwroot/
 
 # 方式 2: USB/移动硬盘
 Copy-Item edu-evaluation-offline-*.tar.gz E:\
@@ -284,7 +281,7 @@ for image in docker-images/*.tar.gz; do
 done
 
 # 验证镜像已加载
-docker images | grep -E "mysql|redis|minio|rabbitmq|nginx|edu-|deploy-"
+docker images | grep -E "mysql|redis|minio|nginx|edu-|deploy-"
 ```
 
 **🪟 Windows PowerShell：**
@@ -296,7 +293,7 @@ Get-ChildItem docker-images/*.tar | ForEach-Object {
 }
 
 # 验证镜像已加载
-docker images | Select-String -Pattern "mysql|redis|minio|rabbitmq|nginx|edu-|deploy-"
+docker images | Select-String -Pattern "mysql|redis|minio|nginx|edu-|deploy-"
 ```
 
 ### 4.4 创建环境配置文件
@@ -317,9 +314,6 @@ cp .env.example .env
 # MySQL 密码（设置强密码）
 MYSQL_PASSWORD=YourStrongPassword123!
 MYSQL_ROOT_PASSWORD=YourRootPassword456!
-
-# RabbitMQ 密码
-RABBITMQ_PASSWORD=YourRabbitPassword789!
 
 # MinIO 密码
 MINIO_ROOT_PASSWORD=YourMinioPassword012!
@@ -396,8 +390,6 @@ vi nginx/conf.d/default.conf
 | Redis | 6379 | `REDIS_PORT=6379` |
 | MinIO API | 9000 | `MINIO_API_PORT=9000` |
 | MinIO 控制台 | 9001 | `MINIO_CONSOLE_PORT=9001` |
-| RabbitMQ | 5672 | `RABBITMQ_PORT=5672` |
-| RabbitMQ 管理 | 15672 | `RABBITMQ_MGMT_PORT=15672` |
 
 ---
 
@@ -417,7 +409,6 @@ docker compose ps
 # edu-minio       minio/minio:latest      Up (healthy)
 # edu-mysql       mysql:8.4               Up (healthy)
 # edu-nginx       nginx:alpine            Up (healthy)
-# edu-rabbitmq    rabbitmq:4-management   Up (healthy)
 # edu-redis       redis:7-alpine          Up (healthy)
 ```
 
@@ -444,7 +435,6 @@ Invoke-WebRequest -Uri http://localhost:8000/health -UseBasicParsing
 | 前端页面 | `http://服务器IP` | 主应用入口 |
 | 后端 API | `http://服务器IP:8080` | REST API |
 | MinIO 控制台 | `http://服务器IP:9001` | 文件存储管理 |
-| RabbitMQ 管理 | `http://服务器IP:15672` | 消息队列管理 |
 
 ---
 
@@ -515,7 +505,7 @@ docker compose logs <service_name>
 # 按顺序重启
 docker compose restart mysql
 sleep 10
-docker compose restart redis rabbitmq minio
+docker compose restart redis minio
 sleep 10
 docker compose restart ai-worker backend nginx
 ```
@@ -690,6 +680,248 @@ docker exec -it edu-ai-worker bash
 
 ---
 
+## 10. 前后端单独打包部署
+
+当只需要更新前端或后端时，无需重新打包所有镜像，可单独构建和部署。
+
+### 10.1 单独更新前端
+
+#### 本地操作 — 构建并打包
+
+**🐧 Linux / macOS / 🪟 Windows（通用）：**
+```bash
+# 1. 进入前端目录构建镜像
+cd edu-evaluation/frontend
+docker build -t edu-frontend:latest .
+
+# 2. 导出镜像
+cd ../deploy
+mkdir -p images
+
+# 🐧 Linux / macOS
+docker save edu-frontend:latest | gzip > images/edu-frontend.tar.gz
+
+# 🪟 Windows PowerShell
+docker save edu-frontend:latest -o images/edu-frontend.tar
+```
+
+#### 传输到服务器
+
+```bash
+# 🐧 Linux / macOS
+scp deploy/images/edu-frontend.tar.gz root@server-ip:/www/wwwroot/edu-evaluation-offline/deploy/images/
+
+# 🪟 Windows PowerShell
+scp deploy\images\edu-frontend.tar root@47.108.223.229:/www/wwwroot/edu-evaluation-offline/deploy/images/
+```
+
+#### 服务器操作 — 部署
+
+```bash
+# 1. SSH 登录服务器
+ssh root@47.108.223.229
+
+# 2. 加载镜像
+cd /www/wwwroot/edu-evaluation-offline/deploy/images
+# 🐧 Linux
+gunzip -c edu-frontend.tar.gz | docker load
+# 🪟 Windows（如果在 Windows 服务器上）
+docker load -i edu-frontend.tar
+
+# 3. 重启前端服务
+cd /www/wwwroot/edu-evaluation-offline/deploy
+docker compose up -d frontend
+
+# 4. 验证
+docker compose ps frontend
+curl -s http://localhost/
+```
+
+---
+
+### 10.2 单独更新后端
+
+#### 本地操作 — 构建并打包
+
+**🐧 Linux / macOS / 🪟 Windows（通用）：**
+```bash
+# 1. 进入后端目录构建镜像
+cd edu-evaluation/backend
+docker build -t edu-backend:latest .
+
+# 2. 导出镜像
+cd ../deploy
+mkdir -p images
+
+# 🐧 Linux / macOS
+docker save edu-backend:latest | gzip > images/edu-backend.tar.gz
+
+# 🪟 Windows PowerShell
+docker save edu-backend:latest -o images/edu-backend.tar
+```
+
+#### 传输到服务器
+
+```bash
+# 🐧 Linux / macOS
+scp deploy/images/edu-backend.tar.gz root@server-ip:/www/wwwroot/edu-evaluation-offline/deploy/images/
+
+# 🪟 Windows PowerShell
+scp deploy\images\edu-backend.tar root@47.108.223.229:/www/wwwroot/edu-evaluation-offline/deploy/images/
+```
+
+#### 服务器操作 — 部署
+
+```bash
+# 1. SSH 登录服务器
+ssh root@47.108.223.229
+
+# 2. 加载镜像
+cd /www/wwwroot/edu-evaluation-offline/deploy/images
+# 🐧 Linux
+gunzip -c edu-backend.tar.gz | docker load
+# 🪟 Windows
+docker load -i edu-backend.tar
+
+# 3. 重启后端服务
+cd /www/wwwroot/edu-evaluation-offline/deploy
+docker compose up -d backend
+
+# 4. 验证（等待健康检查通过）
+sleep 15
+docker compose ps backend
+curl -s http://localhost:8080/actuator/health
+```
+
+---
+
+### 10.3 单独更新 AI Worker
+
+#### 本地操作 — 构建并打包
+
+**🐧 Linux / macOS / 🪟 Windows（通用）：**
+```bash
+# 1. 进入 AI Worker 目录构建镜像
+cd edu-evaluation/ai-worker
+docker build -t edu-ai-worker:latest .
+
+# 2. 导出镜像
+cd ../deploy
+mkdir -p images
+
+# 🐧 Linux / macOS
+docker save edu-ai-worker:latest | gzip > images/edu-ai-worker.tar.gz
+
+# 🪟 Windows PowerShell
+docker save edu-ai-worker:latest -o images/edu-ai-worker.tar
+```
+
+#### 传输到服务器
+
+```bash
+# 🐧 Linux / macOS
+scp deploy/images/edu-ai-worker.tar.gz root@server-ip:/www/wwwroot/edu-evaluation-offline/deploy/images/
+
+# 🪟 Windows PowerShell
+scp deploy\images\edu-ai-worker.tar root@47.108.223.229:/www/wwwroot/edu-evaluation-offline/deploy/images/
+```
+
+#### 服务器操作 — 部署
+
+```bash
+# 1. SSH 登录服务器
+ssh root@47.108.223.229
+
+# 2. 加载镜像
+cd /www/wwwroot/edu-evaluation-offline/deploy/images
+# 🐧 Linux
+gunzip -c edu-ai-worker.tar.gz | docker load
+# 🪟 Windows
+docker load -i edu-ai-worker.tar
+
+# 3. 重启 AI Worker 服务
+cd /www/wwwroot/edu-evaluation-offline/deploy
+docker compose up -d ai-worker
+
+# 4. 验证
+docker compose ps ai-worker
+```
+
+---
+
+### 10.4 快速部署脚本
+
+为简化操作，可使用以下脚本：
+
+#### deploy/scripts/update-frontend.sh
+
+```bash
+#!/bin/bash
+# 单独更新前端
+set -e
+
+SERVER=${1:-"root@47.108.223.229"}
+DEPLOY_DIR="/www/wwwroot/edu-evaluation-offline/deploy"
+
+echo "📦 构建前端镜像..."
+cd "$(dirname "$0")/../../frontend"
+docker build -t edu-frontend:latest .
+
+echo "💾 导出镜像..."
+cd "$(dirname "$0")/.."
+docker save edu-frontend:latest | gzip > images/edu-frontend.tar.gz
+
+echo "📤 传输到服务器..."
+scp images/edu-frontend.tar.gz $SERVER:$DEPLOY_DIR/images/
+
+echo "🚀 部署..."
+ssh $SERVER << 'EOF'
+cd /www/wwwroot/edu-evaluation-offline/deploy/images
+gunzip -c edu-frontend.tar.gz | docker load
+cd ..
+docker compose up -d frontend
+EOF
+
+echo "✅ 前端更新完成"
+```
+
+#### deploy/scripts/update-backend.sh
+
+```bash
+#!/bin/bash
+# 单独更新后端
+set -e
+
+SERVER=${1:-"root@47.108.223.229"}
+DEPLOY_DIR="/www/wwwroot/edu-evaluation-offline/deploy"
+
+echo "📦 构建后端镜像..."
+cd "$(dirname "$0")/../../backend"
+docker build -t edu-backend:latest .
+
+echo "💾 导出镜像..."
+cd "$(dirname "$0")/.."
+docker save edu-backend:latest | gzip > images/edu-backend.tar.gz
+
+echo "📤 传输到服务器..."
+scp images/edu-backend.tar.gz $SERVER:$DEPLOY_DIR/images/
+
+echo "🚀 部署..."
+ssh $SERVER << 'EOF'
+cd /www/wwwroot/edu-evaluation-offline/deploy/images
+gunzip -c edu-backend.tar.gz | docker load
+cd ..
+docker compose up -d backend
+echo "⏳ 等待后端启动..."
+sleep 15
+docker compose ps backend
+EOF
+
+echo "✅ 后端更新完成"
+```
+
+---
+
 ## 附录
 
 ### A. 离线包目录结构
@@ -701,7 +933,6 @@ edu-evaluation-offline-20260706.tar.gz
     │   ├── mysql-8.4.tar.gz
     │   ├── redis-7-alpine.tar.gz
     │   ├── minio-latest.tar.gz
-    │   ├── rabbitmq-4-management.tar.gz
     │   ├── nginx-alpine.tar.gz
     │   ├── edu-backend.tar.gz
     │   ├── edu-ai-worker.tar.gz
@@ -751,8 +982,6 @@ edu-evaluation-offline-20260706.tar.gz
 | Redis | 6379 | 6379 | TCP | 缓存 |
 | MinIO API | 9000 | 9000 | HTTP | 对象存储 API |
 | MinIO Console | 9001 | 9001 | HTTP | MinIO 管理界面 |
-| RabbitMQ | 5672 | 5672 | AMQP | 消息队列 |
-| RabbitMQ Mgmt | 15672 | 15672 | HTTP | RabbitMQ 管理界面 |
 
 ### D. 故障排查清单
 

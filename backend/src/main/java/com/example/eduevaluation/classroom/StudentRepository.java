@@ -11,6 +11,12 @@ public interface StudentRepository extends JpaRepository<StudentEntity, String> 
 
     List<StudentEntity> findByClassIdOrderByCreatedAtDesc(String classId);
 
+    List<StudentEntity> findByClassIdAndStudentNumber(String classId, String studentNumber);
+
+    List<StudentEntity> findByStudentIdIn(List<String> studentIds);
+
+    List<StudentEntity> findByClassIdIn(List<String> classIds);
+
     @Query("SELECT s FROM StudentEntity s LEFT JOIN FETCH s.studentWorks sw LEFT JOIN FETCH sw.workTask WHERE s.classId = :classId ORDER BY s.createdAt DESC")
     List<StudentEntity> findByClassIdWithWorksOrderByCreatedAtDesc(String classId);
 

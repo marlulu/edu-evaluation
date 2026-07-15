@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .frame_extractor import Keyframe, encode_image_base64
 from .transcriber import TranscriptionResult, build_speech_analysis
 
 logger = logging.getLogger(__name__)
+
+MAX_VISION_FRAMES = 12
+VISION_BATCH_SIZE = 4
+MAX_ANALYSIS_CHARACTERS = 7000
+MAX_CRITERIA_CHARACTERS = 8000
+MAX_SUPPORTING_DOCUMENT_CHARACTERS = 6000
+MAX_OUTPUT_TOKENS = 1800
+DURATION_FEEDBACK_PATTERN = re.compile(r"时长|片长|播放时间|过长|过短|\d+(?:\.\d+)?\s*(?:分钟|分|秒)")
 
 
 @dataclass
@@ -27,7 +37,7 @@ class AnalysisResult:
     suggestions: list[str] = field(default_factory=list)
 
 
-def _call_ai(client, model: str, prompt: str, max_retries: int = 3) -> str:
+def _call_ai(client, model: str, prompt: str, max_retries: int = 2) -> str:
     """通用 AI 调用（带重试）"""
     for attempt in range(max_retries):
         try:
@@ -35,23 +45,19 @@ def _call_ai(client, model: str, prompt: str, max_retries: int = 3) -> str:
                 model=model,
                 input=[{"role": "user", "content": prompt}],
                 store=False,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
             )
-            # 检查响应是否完整
-            print(f"[DEBUG] AI response status: {resp.status}")
-            if hasattr(resp, 'incomplete_details') and resp.incomplete_details:
-                print(f"[DEBUG] AI response incomplete: {resp.incomplete_details}")
-            print(f"[DEBUG] AI response output_text length: {len(resp.output_text) if resp.output_text else 0}")
             return resp.output_text
         except Exception as e:
             if attempt < max_retries - 1:
-                wait = (attempt + 1) * 5
+                wait = attempt + 1
                 logger.warning("AI call failed, retrying in %ds... (%s)", wait, e)
                 time.sleep(wait)
             else:
                 return f"[AI 调用失败] {e}"
 
 
-def _call_ai_multimodal(client, model: str, content: list, max_retries: int = 3) -> str:
+def _call_ai_multimodal(client, model: str, content: list, max_retries: int = 2) -> str:
     """多模态 AI 调用（带重试）"""
     for attempt in range(max_retries):
         try:
@@ -59,11 +65,12 @@ def _call_ai_multimodal(client, model: str, content: list, max_retries: int = 3)
                 model=model,
                 input=[{"role": "user", "content": content}],
                 store=False,
+                max_output_tokens=1200,
             )
             return resp.output_text.strip()
         except Exception as e:
             if attempt < max_retries - 1:
-                wait = (attempt + 1) * 5
+                wait = attempt + 1
                 logger.warning("Multimodal AI call failed, retrying in %ds... (%s)", wait, e)
                 time.sleep(wait)
             else:
@@ -74,46 +81,56 @@ def describe_keyframes_with_ai(
     client,
     model: str,
     keyframes: list[Keyframe],
+    batch_progress: Callable[[int, int], None] | None = None,
 ) -> str:
     """一次调用分析所有关键帧，返回综合场景描述"""
-    frame_labels = []
-    content = [
-        {
-            "type": "input_text",
-            "text": f"""以下是视频的 {len(keyframes)} 张关键帧截图，按时间顺序排列。
+    if len(keyframes) > MAX_VISION_FRAMES:
+        step = (len(keyframes) - 1) / (MAX_VISION_FRAMES - 1)
+        keyframes = [keyframes[round(index * step)] for index in range(MAX_VISION_FRAMES)]
 
-请用中文分析：
-1. 每张图的画面内容（角色、场景、动作），用 "图N: ..." 格式，每图1-2句
-2. 整体视频主题推测
-3. 内容变化趋势（画面如何推进）""",
-        }
+    usable_frames = [
+        (index, frame)
+        for index, frame in enumerate(keyframes, start=1)
+        if frame.path or frame.image_base64
     ]
-
-    for i, kf in enumerate(keyframes):
-        if kf.path:
-            frame_labels.append(f"图{i + 1} ({kf.timestamp}s)")
-            content.append({
-                "type": "input_image",
-                "image_url": f"data:image/jpeg;base64,{encode_image_base64(kf.path)}",
-            })
-        elif kf.image_base64:
-            frame_labels.append(f"图{i + 1} ({kf.timestamp}s)")
-            content.append({
-                "type": "input_image",
-                "image_url": kf.image_base64,
-            })
-
-    if not frame_labels:
+    if not usable_frames:
         return "(无可分析的关键帧)"
 
-    content[0]["text"] = f"""以下是视频的 {len(frame_labels)} 张关键帧截图，按时间顺序排列：{', '.join(frame_labels)}。
+    batch_results: list[str] = []
+    total_batches = (len(usable_frames) + VISION_BATCH_SIZE - 1) // VISION_BATCH_SIZE
+    for offset in range(0, len(usable_frames), VISION_BATCH_SIZE):
+        batch = usable_frames[offset:offset + VISION_BATCH_SIZE]
+        labels = [f"图{index} ({frame.timestamp}s)" for index, frame in batch]
+        content = [{
+            "type": "input_text",
+            "text": f"""这是视觉证据第 {offset // VISION_BATCH_SIZE + 1}/{total_batches} 批，
+包含：{', '.join(labels)}。
 
 请用中文分析：
-1. 每张图的画面内容（角色、场景、动作），用 "图N: ..." 格式，每图1-2句
-2. 整体视频主题推测
-3. 内容变化趋势（画面如何推进）"""
+1. 按全局编号逐张描述角色、场景、动作，每图1-2句
+2. 概括本批共同主题与内容变化
+不要虚构未展示的其他图片。""",
+        }]
+        for _, frame in batch:
+            if frame.path:
+                mime_type = mimetypes.guess_type(frame.path)[0] or "image/jpeg"
+                content.append({
+                    "type": "input_image",
+                    "image_url": f"data:{mime_type};base64,{encode_image_base64(frame.path)}",
+                })
+            else:
+                content.append({
+                    "type": "input_image",
+                    "image_url": frame.image_base64,
+                })
+        batch_results.append(
+            f"【视觉证据第 {offset // VISION_BATCH_SIZE + 1} 批】\n"
+            + _call_ai_multimodal(client, model, content)
+        )
+        if batch_progress:
+            batch_progress(offset // VISION_BATCH_SIZE + 1, total_batches)
 
-    return _call_ai_multimodal(client, model, content)
+    return "\n\n".join(batch_results)
 
 
 def analyze_comprehensive(
@@ -131,13 +148,22 @@ def analyze_comprehensive(
 
     # 关键帧 OCR 信息
     keyframe_info = "关键帧内容：\n"
-    for kf in keyframes:
-        keyframe_info += f"- {kf.timestamp}s: [OCR] {kf.ocr_summary or 'N/A'}\n"
+    usable_ocr = [
+        kf for kf in keyframes
+        if kf.ocr_texts and kf.ocr_summary and not kf.ocr_summary.startswith("(")
+    ]
+    if usable_ocr:
+        for kf in usable_ocr:
+            keyframe_info += f"- {kf.timestamp}s: [OCR] {kf.ocr_summary}\n"
+    else:
+        keyframe_info += "- 无可靠 OCR 文字，忽略该证据\n"
 
     # 转录内容
     transcription_info = ""
-    if transcription and transcription.full_text:
-        transcription_info = f"语音转录内容:\n{transcription.full_text[:600]}"
+    if transcription and transcription.full_text and transcription.reliable:
+        transcription_info = f"语音转录内容:\n{transcription.full_text[:1200]}"
+    elif transcription and not transcription.reliable:
+        transcription_info = f"（{transcription.quality_warning}）"
     else:
         transcription_info = "（语音转录不可用）"
 
@@ -174,8 +200,10 @@ def analyze_comprehensive(
 
     # 专业术语提取
     terms_info = ""
-    if transcription:
-        all_text = transcription.full_text + " " + " ".join(kf.ocr_summary for kf in keyframes)
+    if transcription and transcription.reliable:
+        all_text = transcription.full_text + " " + " ".join(
+            kf.ocr_summary for kf in usable_ocr
+        )
         cn_terms = set(re.findall(r'[一-鿿]{4,8}', all_text))
         en_terms = set(t.lower() for t in re.findall(r'[A-Za-z]{3,}', all_text) if len(t) >= 4)
         common_words = {"这个", "那个", "就是", "然后", "可以", "应该", "因为", "所以", "如果", "但是"}
@@ -240,8 +268,36 @@ def evaluate_with_criteria(
     model: str,
     analysis_result: str,
     criteria_text: str,
+    supporting_document_text: str | None = None,
+    supporting_document_name: str | None = None,
 ) -> dict | str:
     """根据评判标准对视频分析结果进行评分，返回结构化字典或原始文本"""
+    document_section = ""
+    conformity_schema = '"document_conformity": null'
+    analysis_result = analysis_result[:MAX_ANALYSIS_CHARACTERS]
+    criteria_text = criteria_text[:MAX_CRITERIA_CHARACTERS]
+    if supporting_document_text:
+        document_section = f"""
+
+【说明文档：{supporting_document_name or "未命名文档"}】
+{supporting_document_text[:MAX_SUPPORTING_DOCUMENT_CHARACTERS]}
+
+请提取最多 10 条与主题、设计选择、技术实现或预期效果有关的可验证陈述，
+并用作品证据判断为 supported、partially_supported、unsupported 或
+unverifiable。无法验证或与评分标准无关的陈述不得导致扣分。
+"""
+        conformity_schema = """"document_conformity": {
+    "summary": "作品与说明文档的总体符合情况",
+    "findings": [
+      {
+        "claim": "文档中的可验证陈述",
+        "status": "supported",
+        "work_evidence": "作品中的对应证据",
+        "related_dimension": "关联评分维度"
+      }
+    ]
+  }"""
+
     prompt = f"""你是一位专业的视频评审专家。请根据以下【评判标准】对【视频分析结果】进行逐条评分。
 
 【评判标准】
@@ -249,6 +305,7 @@ def evaluate_with_criteria(
 
 【视频分析结果】
 {analysis_result}
+{document_section}
 
 请严格按照以下 JSON 格式返回评分结果，不要输出任何其他内容：
 
@@ -271,7 +328,10 @@ def evaluate_with_criteria(
     "最紧迫：...",
     "次重要：...",
     "锦上添花：..."
-  ]
+  ],
+  "brief_comment": "不超过120个中文字符的简短评语",
+  "notes": ["最多三条关键限制或异常"],
+  {conformity_schema}
 }}
 ```
 
@@ -281,7 +341,13 @@ def evaluate_with_criteria(
 3. grade 根据 total_score 判定：优秀(90+)/良好(80+)/合格(60+)/不合格(<60)
 4. strengths 列出 2-3 个主要优点
 5. weaknesses 列出 2-3 个主要不足
-6. priority_suggestions 列出最重要的 3 个改进点"""
+6. priority_suggestions 列出最重要的 3 个改进点
+7. brief_comment 使用 1-2 句话，且不超过 120 个中文字符
+8. notes 最多 3 条；没有关键限制或异常时返回空数组
+9. 说明文档只能作为评分证据，不能取代作品中可观察到的证据
+10. strengths、weaknesses、priority_suggestions 和 brief_comment 只评价作品内容，
+包括主题表达、结构逻辑、创意、叙事、视觉或听觉表达及其改进；禁止评价作品时长、
+片长、分钟数或秒数。时长如属于评判标准，只能出现在对应 scores 项中"""
 
     raw = _call_ai(client, model, prompt)
     return _parse_evaluation_json(raw, criteria_text)
@@ -289,7 +355,7 @@ def evaluate_with_criteria(
 
 def _parse_evaluation_json(raw: str, criteria_text: str) -> dict | str:
     """解析 LLM 返回的评分 JSON，容错处理"""
-    from .schemas import EvaluationResult, ScoreItem
+    from .schemas import DocumentConformity, EvaluationResult, ScoreItem
 
     # 尝试从 markdown 代码块中提取 JSON
     json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', raw, re.DOTALL)
@@ -313,10 +379,17 @@ def _parse_evaluation_json(raw: str, criteria_text: str) -> dict | str:
                 )
                 for s in data.get("scores", [])
             ],
-            strengths=[str(s) for s in data.get("strengths", [])],
-            weaknesses=[str(w) for w in data.get("weaknesses", [])],
-            priority_suggestions=[str(p) for p in data.get("priority_suggestions", [])],
+            strengths=_content_feedback_items(data.get("strengths", [])),
+            weaknesses=_content_feedback_items(data.get("weaknesses", [])),
+            priority_suggestions=_content_feedback_items(data.get("priority_suggestions", [])),
             criteria_text=criteria_text,
+            brief_comment=_content_feedback_comment(data.get("brief_comment", ""))[:120],
+            notes=[str(note) for note in data.get("notes", [])[:3]],
+            document_conformity=(
+                DocumentConformity.model_validate(data["document_conformity"])
+                if isinstance(data.get("document_conformity"), dict)
+                else None
+            ),
         )
         return result.model_dump()
     except Exception as e:
@@ -330,5 +403,24 @@ def _parse_evaluation_json(raw: str, criteria_text: str) -> dict | str:
             "weaknesses": [],
             "priority_suggestions": [],
             "criteria_text": criteria_text,
+            "brief_comment": "",
+            "notes": [],
+            "document_conformity": None,
             "raw_text": raw,
         }
+
+
+def _content_feedback_items(values: list | None) -> list[str]:
+    return [
+        text
+        for value in (values or [])
+        if (text := str(value).strip()) and not DURATION_FEEDBACK_PATTERN.search(text)
+    ]
+
+
+def _content_feedback_comment(value: object) -> str:
+    sentences = re.split(r"(?<=[。！？；])", str(value or ""))
+    return "".join(
+        sentence for sentence in sentences
+        if sentence.strip() and not DURATION_FEEDBACK_PATTERN.search(sentence)
+    ).strip()

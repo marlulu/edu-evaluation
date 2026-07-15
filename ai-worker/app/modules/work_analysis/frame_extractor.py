@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +39,8 @@ def extract_all_frames(
     max_frames: int = 30,
 ) -> list[Keyframe]:
     """按间隔提取所有帧"""
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # 获取视频时长
@@ -152,6 +155,8 @@ def extract_keyframes_ffmpeg(
     interval: float = 2.0,
 ) -> list[Keyframe]:
     """使用 ffmpeg 提取关键帧（支持多种方法）"""
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     keyframes = []
 
@@ -164,20 +169,43 @@ def extract_keyframes_ffmpeg(
         scene_frames = _extract_by_scene_change(work_path, output_dir, threshold, max_frames)
         logger.info(f"[Keyframe] scene_change={len(scene_frames)} (threshold={threshold})")
 
-        # 如果场景变化帧不足，才补充间隔帧
-        if len(scene_frames) < max_frames // 2:
-            remaining = max_frames - len(scene_frames)
-            interval_frames = _extract_by_interval(work_path, output_dir, interval, remaining)
-            logger.info(f"[Keyframe] interval补充={len(interval_frames)} (interval={interval}s)")
-            # 合并去重：用 1.0s 阈值避免重复帧
-            keyframes = _merge_keyframes(scene_frames, interval_frames, 1.0)[:max_frames]
-        else:
-            keyframes = scene_frames[:max_frames]
+        interval_frames = _extract_by_interval(
+            work_path,
+            output_dir,
+            interval,
+            max_frames,
+        )
+        keyframes = _replace_timeline_frames_with_scenes(interval_frames, scene_frames)
 
         logger.info(f"[Keyframe] merged={len(keyframes)}")
 
     logger.info(f"[Keyframe] final: {len(keyframes)} keyframes (method={method}, max={max_frames})")
     return keyframes
+
+
+def _replace_timeline_frames_with_scenes(
+    timeline_frames: list[Keyframe],
+    scene_frames: list[Keyframe],
+) -> list[Keyframe]:
+    """Keep complete timeline coverage while favoring nearby scene changes."""
+    if not timeline_frames:
+        return []
+
+    replacements: dict[int, Keyframe] = {}
+    for scene_frame in scene_frames:
+        closest_index = min(
+            range(len(timeline_frames)),
+            key=lambda index: abs(timeline_frames[index].timestamp - scene_frame.timestamp),
+        )
+        existing = replacements.get(closest_index)
+        if existing is None or (scene_frame.change_score or 0) > (existing.change_score or 0):
+            replacements[closest_index] = scene_frame
+
+    selected = list(timeline_frames)
+    for index, scene_frame in replacements.items():
+        selected[index] = scene_frame
+
+    return sorted(selected, key=lambda frame: frame.timestamp)
 
 
 def _extract_by_interval(
@@ -196,13 +224,19 @@ def _extract_by_interval(
 
     logger.info(f"[Keyframe] interval extraction: duration={duration:.1f}s, interval={interval}s, max={max_frames}")
 
-    keyframes = []
-    prev_path = None
+    if duration <= 0 or max_frames <= 0:
+        return []
 
-    for i in range(max_frames):
-        timestamp = i * interval
-        if timestamp >= duration:
-            break
+    # Spread the requested number across the complete timeline. Avoid the
+    # exact end timestamp because some codecs cannot seek to the final frame.
+    if max_frames == 1:
+        timestamps = [0.0]
+    else:
+        end = max(0.0, duration - min(0.05, duration / 100))
+        timestamps = [end * i / (max_frames - 1) for i in range(max_frames)]
+
+    keyframes = []
+    for i, timestamp in enumerate(timestamps):
 
         output_path = output_dir / f"frame_{i:04d}.jpg"
         cmd = [
@@ -212,21 +246,13 @@ def _extract_by_interval(
         subprocess.run(cmd, capture_output=True, timeout=10)
 
         if output_path.exists():
-            # 如果有前一帧，计算差异
-            if prev_path and Path(prev_path).exists():
-                change = calculate_frame_difference(prev_path, str(output_path))
-                # 只保留变化明显的帧（阈值 0.1）
-                if change < 0.1:
-                    continue
-
             keyframes.append(Keyframe(
                 index=i,
-                timestamp=round(timestamp, 2),
+                timestamp=round(timestamp, 3),
                 path=str(output_path),
             ))
-            prev_path = str(output_path)
 
-    logger.info(f"[Keyframe] interval: extracted {len(keyframes)} frames with significant changes")
+    logger.info(f"[Keyframe] interval: extracted {len(keyframes)} timeline frames")
     return keyframes
 
 
@@ -257,7 +283,7 @@ def _extract_by_scene_change(
 
     keyframes = []
     for i, ts in enumerate(sorted(timestamps, key=float)):
-        output_path = output_dir / f"scene_{i:04d}.jpg"
+        output_path = output_dir / f"scene_{i + 1:04d}.jpg"
         if output_path.exists():
             # 获取对应的场景变化分数
             score = float(scene_scores[i]) if i < len(scene_scores) else threshold

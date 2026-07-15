@@ -10,7 +10,7 @@ For a detailed description of the technology stack, local startup flow, validati
 frontend/   React + TypeScript + Vite UI
 backend/    Spring Boot API and business orchestration
 ai-worker/  Python FastAPI service for future extraction and AI evaluation
-infra/      Local MySQL, Redis, MinIO, and RabbitMQ Docker Compose setup
+infra/      Local MySQL, Redis, and MinIO Docker Compose setup
 ```
 
 前端调用 Spring Boot 后端。后端负责业务 API、持久化、文件元数据和编排。AI Worker 是一个独立的服务，用于文档解析、OCR/ASR、作品处理和 LLM 评估。
@@ -171,4 +171,3 @@ npm run dev
 - MySQL: `localhost:3306`
 - Redis: `localhost:6379`
 - MinIO Console: `http://localhost:9001`
-- RabbitMQ Management: `http://localhost:15672`

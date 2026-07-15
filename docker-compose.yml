@@ -27,20 +27,6 @@ services:
     volumes:
       - redis_data:/data
 
-  # RabbitMQ 消息队列
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: edu-rabbitmq
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: edu
-      RABBITMQ_DEFAULT_PASS: edu_password
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-
   # MinIO 对象存储
   minio:
     image: minio/minio:latest
@@ -59,5 +45,4 @@ services:
 volumes:
   mysql_data:
   redis_data:
-  rabbitmq_data:
   minio_data:

@@ -20,6 +20,8 @@ class WorkerSettings(BaseModel):
     model_api_base_url: str | None = None
     model_api_key: str | None = None
     model_timeout_seconds: int = 60
+    max_concurrent_work_tasks: int = Field(default=6, ge=1, le=12)
+    max_concurrent_ocr_tasks: int = Field(default=2, ge=1, le=4)
 
     vision_provider_name: str | None = None
     vision_model_name: str | None = None
@@ -82,6 +84,8 @@ def get_settings() -> WorkerSettings:
         model_api_base_url=_env("MODEL_API_BASE_URL"),
         model_api_key=_env("MODEL_API_KEY"),
         model_timeout_seconds=int(_env("MODEL_TIMEOUT_SECONDS", "60") or "60"),
+        max_concurrent_work_tasks=int(_env("MAX_CONCURRENT_WORK_TASKS", "6") or "6"),
+        max_concurrent_ocr_tasks=int(_env("MAX_CONCURRENT_OCR_TASKS", "2") or "2"),
         vision_provider_name=_env("VISION_PROVIDER_NAME"),
         vision_model_name=_env("VISION_MODEL_NAME"),
         speech_provider_name=_env("SPEECH_PROVIDER_NAME"),
@@ -118,6 +122,8 @@ class PublicSettingsView(BaseModel):
     model_provider_driver: str
     model_api_base_url: str | None
     model_timeout_seconds: int
+    max_concurrent_work_tasks: int
+    max_concurrent_ocr_tasks: int
     parse_task_callback_url: str | None
     parse_artifact_base_path: str
     archive_extract_base_path: str
@@ -152,6 +158,8 @@ def build_public_settings_view(settings: WorkerSettings) -> PublicSettingsView:
         model_provider_driver=settings.model_provider_driver,
         model_api_base_url=settings.model_api_base_url,
         model_timeout_seconds=settings.model_timeout_seconds,
+        max_concurrent_work_tasks=settings.max_concurrent_work_tasks,
+        max_concurrent_ocr_tasks=settings.max_concurrent_ocr_tasks,
         parse_task_callback_url=settings.parse_task_callback_url,
         parse_artifact_base_path=settings.parse_artifact_base_path,
         archive_extract_base_path=settings.archive_extract_base_path,

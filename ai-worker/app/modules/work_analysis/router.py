@@ -42,8 +42,11 @@ async def analyze_work(
         "taskId": "task_id",
         "fileName": "file_name",
         "filePath": "file_path",
+        "imagePaths": "image_paths",
         "callbackUrl": "callback_url",
         "criteriaText": "criteria_text",
+        "supportingDocumentName": "supporting_document_name",
+        "supportingDocumentText": "supporting_document_text",
     }
     converted = {}
     for k, v in request.items():
@@ -103,8 +106,11 @@ async def analyze_work_async(
         "taskId": "task_id",
         "fileName": "file_name",
         "filePath": "file_path",
+        "imagePaths": "image_paths",
         "callbackUrl": "callback_url",
         "criteriaText": "criteria_text",
+        "supportingDocumentName": "supporting_document_name",
+        "supportingDocumentText": "supporting_document_text",
     }
     converted = {}
     for k, v in request.items():

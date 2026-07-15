@@ -39,10 +39,10 @@
                                 │
           ┌─────────┬───────────┼───────────┬─────────┐
           ▼         ▼           ▼           ▼         ▼
-      ┌───────┐ ┌───────┐ ┌─────────┐ ┌───────┐ ┌────────┐
-      │ MySQL │ │ Redis │ │  MinIO  │ │RabbitMQ│ │AI 模型  │
-      │ 3306  │ │ 6379  │ │ 9000    │ │ 5672  │ │ API    │
-      └───────┘ └───────┘ └─────────┘ └───────┘ └────────┘
+      ┌───────┐ ┌───────┐ ┌─────────┐ ┌────────┐
+      │ MySQL │ │ Redis │ │  MinIO  │ │AI 模型  │
+      │ 3306  │ │ 6379  │ │ 9000    │ │ API    │
+      └───────┘ └───────┘ └─────────┘ └────────┘
 ```
 
 ### 技术栈
@@ -55,7 +55,6 @@
 | 数据库 | MySQL | 8.4 |
 | 缓存 | Redis | 7.4 |
 | 文件存储 | MinIO | 2024-12 |
-| 消息队列 | RabbitMQ | 4.0 |
 
 ---
 
@@ -115,9 +114,6 @@ MYSQL_ROOT_PASSWORD=your_strong_root_password_here
 # MinIO 密码
 MINIO_ROOT_PASSWORD=your_minio_password_here
 
-# RabbitMQ 密码
-RABBITMQ_PASSWORD=your_rabbitmq_password_here
-
 # AI 模型 API Key
 MODEL_API_BASE_URL=https://api.openai.com/v1
 MODEL_API_KEY=sk-your-actual-api-key
@@ -156,7 +152,6 @@ curl -s http://localhost:8000/health
 
 - **前端界面**: `http://<服务器IP>`
 - **MinIO 控制台**: `http://<服务器IP>:9001`
-- **RabbitMQ 控制台**: `http://<服务器IP>:15672`
 
 ---
 
@@ -180,11 +175,6 @@ sudo apt install redis-server
 wget https://dl.min.io/server/minio/release/linux-amd64/minio
 chmod +x minio
 ./minio server /data --console-address ":9001"
-
-# RabbitMQ
-sudo apt install rabbitmq-server
-sudo rabbitmqctl add_user edu password
-sudo rabbitmqctl set_user_tags edu administrator
 ```
 
 ### 4.2 AI Worker
@@ -279,13 +269,6 @@ server {
 | `MINIO_ROOT_USER` | `minio` | MinIO 用户名 |
 | `MINIO_ROOT_PASSWORD` | (必填) | MinIO 密码 |
 | `MINIO_BUCKET` | `coursework-submissions` | 存储桶名 |
-
-#### RabbitMQ 配置
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `RABBITMQ_USER` | `edu` | RabbitMQ 用户 |
-| `RABBITMQ_PASSWORD` | (必填) | RabbitMQ 密码 |
 
 #### AI 模型配置
 
@@ -468,7 +451,7 @@ docker system df
 
 ### 8.1 必须做
 
-- [ ] 修改所有默认密码（MySQL、MinIO、RabbitMQ）
+- [ ] 修改所有默认密码（MySQL、MinIO）
 - [ ] 使用强密码（16+ 字符，含大小写+数字+特殊字符）
 - [ ] 配置防火墙，仅开放 80/443 端口
 - [ ] 定期备份数据库
@@ -541,5 +524,3 @@ server {
 | Redis | 6379 | - | 内部通信 |
 | MinIO API | 9000 | - | 内部通信 |
 | MinIO Console | 9001 | - | 可选对外 |
-| RabbitMQ | 5672 | - | 内部通信 |
-| RabbitMQ Console | 15672 | - | 可选对外 |

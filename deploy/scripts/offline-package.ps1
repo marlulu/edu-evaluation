@@ -29,7 +29,6 @@ $Images = @(
     "mysql:8.4",
     "redis:7-alpine",
     "minio/minio:latest",
-    "rabbitmq:4-management",
     "nginx:alpine",
     "eclipse-temurin:17-jre-alpine",
     "python:3.11-slim"
@@ -83,10 +82,9 @@ function Package-Images {
 1. mysql:8.4
 2. redis:7-alpine
 3. minio/minio:latest
-4. rabbitmq:4-management
-5. eclipse-temurin:17-jre-alpine
-6. python:3.11-slim
-7. nginx:alpine
+4. eclipse-temurin:17-jre-alpine
+5. python:3.11-slim
+6. nginx:alpine
 "@ | Out-File -FilePath "images.txt" -Encoding UTF8
 
     Write-Ok "Docker 镜像打包完成"
@@ -342,7 +340,6 @@ vim /opt/edu-evaluation/deploy/.env
 需要修改的配置项：
 - `MYSQL_PASSWORD` — MySQL 密码
 - `MYSQL_ROOT_PASSWORD` — MySQL root 密码
-- `RABBITMQ_PASSWORD` — RabbitMQ 密码
 - `MINIO_ROOT_PASSWORD` — MinIO 密码
 - `MODEL_API_KEY` — AI 模型 API Key
 

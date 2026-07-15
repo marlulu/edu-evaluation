@@ -18,6 +18,9 @@ public class StudentWorkEntity {
     @Column(name = "task_id", nullable = false, length = 36)
     private String taskId;
 
+    @Column(name = "assignment_id", length = 36)
+    private String assignmentId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -33,9 +36,14 @@ public class StudentWorkEntity {
     }
 
     public StudentWorkEntity(String id, String studentId, String taskId) {
+        this(id, studentId, taskId, null);
+    }
+
+    public StudentWorkEntity(String id, String studentId, String taskId, String assignmentId) {
         this.id = id;
         this.studentId = studentId;
         this.taskId = taskId;
+        this.assignmentId = assignmentId;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -63,6 +71,14 @@ public class StudentWorkEntity {
 
     public void setTaskId(String taskId) {
         this.taskId = taskId;
+    }
+
+    public String getAssignmentId() {
+        return assignmentId;
+    }
+
+    public void setAssignmentId(String assignmentId) {
+        this.assignmentId = assignmentId;
     }
 
     public LocalDateTime getCreatedAt() {

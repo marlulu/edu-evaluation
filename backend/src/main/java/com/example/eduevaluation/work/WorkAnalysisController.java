@@ -1,5 +1,6 @@
 package com.example.eduevaluation.work;
 
+import com.example.eduevaluation.classroom.ClassService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -36,18 +38,28 @@ public class WorkAnalysisController {
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final WorkTaskService taskService;
+    private final ClassService classService;
     private final ObjectMapper objectMapper;
+    private final ChunkedWorkUploadService chunkedWorkUploadService;
 
-    public WorkAnalysisController(WorkTaskService taskService, ObjectMapper objectMapper) {
+    public WorkAnalysisController(
+            WorkTaskService taskService,
+            ClassService classService,
+            ObjectMapper objectMapper,
+            ChunkedWorkUploadService chunkedWorkUploadService
+    ) {
         this.taskService = taskService;
+        this.classService = classService;
         this.objectMapper = objectMapper;
+        this.chunkedWorkUploadService = chunkedWorkUploadService;
     }
 
     // 文件类型枚举
     private static final Map<String, String[]> FILE_TYPE_EXTENSIONS = Map.of(
         "video", new String[]{".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".3gp"},
         "audio", new String[]{".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus"},
-        "document", new String[]{".pdf", ".doc", ".docx", ".txt", ".md", ".ppt", ".pptx", ".xls", ".xlsx", ".rtf", ".odt"}
+        "document", new String[]{".pdf", ".doc", ".docx", ".txt", ".md", ".ppt", ".pptx", ".xls", ".xlsx", ".rtf", ".odt"},
+        "image", new String[]{".jpg", ".jpeg", ".png", ".webp", ".bmp"}
     );
 
     /**
@@ -110,6 +122,19 @@ public class WorkAnalysisController {
             "fileSize", file.getSize(),
             "fileType", fileType
         );
+    }
+
+    @PostMapping("/upload/chunk")
+    public Map<String, Object> uploadWorkChunk(
+            @RequestParam("chunk") MultipartFile chunk,
+            @RequestParam String uploadId,
+            @RequestParam String fileName,
+            @RequestParam int chunkIndex,
+            @RequestParam int totalChunks,
+            @RequestParam long totalSize
+    ) throws IOException {
+        return chunkedWorkUploadService.acceptChunk(
+                chunk, uploadId, sanitizeFileName(fileName), chunkIndex, totalChunks, totalSize);
     }
 
     // ====== 评判标准文件上传 ======
@@ -264,6 +289,15 @@ public class WorkAnalysisController {
                         ));
                         continue;
                     }
+                } catch (HttpClientErrorException.NotFound e) {
+                    markLostTaskFailed(summary);
+                    tasks.add(Map.of(
+                        "taskId", summary.getTaskId(),
+                        "fileName", summary.getFileName(),
+                        "status", "failed",
+                        "progress", summary.getProgress()
+                    ));
+                    continue;
                 } catch (Exception e) {
                     log.warn("Failed to get task {} from AI Worker", summary.getTaskId(), e);
                 }
@@ -278,6 +312,28 @@ public class WorkAnalysisController {
         }
 
         return ResponseEntity.ok(Map.of("total", tasks.size(), "tasks", tasks));
+    }
+
+    private void markLostTaskFailed(WorkTaskSummary task) {
+        try {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("task_id", task.getTaskId());
+            result.put("file_name", task.getFileName());
+            result.put("status", "failed");
+            result.put("progress", task.getProgress());
+            result.put("error", "分析服务重启，任务已失联，请重新提交作品分析。");
+            taskService.saveTask(
+                task.getTaskId(),
+                task.getFileName(),
+                getFileType(task.getFileName()),
+                "failed",
+                task.getProgress(),
+                objectMapper.writeValueAsString(result)
+            );
+            log.warn("Marked lost task {} as failed after AI Worker returned 404", task.getTaskId());
+        } catch (Exception exception) {
+            log.error("Failed to mark lost task {} as failed", task.getTaskId(), exception);
+        }
     }
 
     @GetMapping("/tasks/{taskId}")
@@ -347,6 +403,11 @@ public class WorkAnalysisController {
     public ResponseEntity<Map> deleteTask(@PathVariable String taskId) {
         // 同时删除 MySQL 和 AI Worker
         boolean deleted = taskService.deleteTask(taskId);
+        if (!deleted) {
+            return ResponseEntity.notFound().build();
+        }
+
+        classService.removeAllWorksForTask(taskId);
 
         try {
             restTemplate.delete(aiWorkerBaseUrl + "/work/tasks/" + taskId);

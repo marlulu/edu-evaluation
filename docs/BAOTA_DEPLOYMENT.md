@@ -205,10 +205,6 @@ MYSQL_USER=edu
 MYSQL_PASSWORD=Edu@2026Secure!
 MYSQL_ROOT_PASSWORD=Root@2026Secure!
 
-# ---------- RabbitMQ ----------
-RABBITMQ_USER=edu
-RABBITMQ_PASSWORD=Rabbit@2026Secure!
-
 # ---------- MinIO ----------
 MINIO_ROOT_USER=minio
 MINIO_ROOT_PASSWORD=Minio@2026Secure!
@@ -249,8 +245,6 @@ OCR_MODEL_NAME=
 # REDIS_PORT=6379
 # MINIO_API_PORT=9000
 # MINIO_CONSOLE_PORT=9001
-# RABBITMQ_PORT=5672
-# RABBITMQ_CONSOLE_PORT=15672
 ```
 
 ### 5.4 密码安全要求
@@ -259,7 +253,6 @@ OCR_MODEL_NAME=
 |------|----------|
 | MySQL | 8+ 字符，含大小写+数字+特殊字符 |
 | MinIO | 8+ 字符 |
-| RabbitMQ | 8+ 字符 |
 | API Key | 从模型提供商获取 |
 
 ---
@@ -301,7 +294,6 @@ NAME                STATUS          PORTS
 edu-mysql           Up (healthy)    3306:3306
 edu-redis           Up (healthy)    6379:6379
 edu-minio           Up (healthy)    9000:9000, 9001:9001
-edu-rabbitmq        Up (healthy)    5672:5672, 15672:15672
 edu-ai-worker       Up (healthy)    8000:8000
 edu-backend         Up (healthy)    8080:8080
 edu-frontend        Up              80:80 -> 0.0.0.0:8088
@@ -422,7 +414,6 @@ server {
 | 8888 | TCP | 宝塔面板 | ✅ 必须 |
 | 8088 | TCP | 应用端口 | ⚠️ 配了反向代理可不开 |
 | 9001 | TCP | MinIO 控制台 | ❌ 按需 |
-| 15672 | TCP | RabbitMQ 控制台 | ❌ 按需 |
 
 ### 9.2 云服务商安全组
 
@@ -483,7 +474,6 @@ docker exec edu-ai-worker curl -s http://localhost:8000/health
 | `http://你的域名` | 前端界面 |
 | `https://你的域名` | 前端界面（HTTPS） |
 | `http://你的IP:9001` | MinIO 控制台 |
-| `http://你的IP:15672` | RabbitMQ 控制台 |
 
 ---
 

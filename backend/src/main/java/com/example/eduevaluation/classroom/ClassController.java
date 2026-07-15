@@ -3,6 +3,7 @@ package com.example.eduevaluation.classroom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -23,17 +24,17 @@ public class ClassController {
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> listClasses() {
-        List<ClassEntity> classes = classService.listClasses();
+        List<ClassSummary> classes = classService.listClassSummaries();
         List<Map<String, Object>> classList = new ArrayList<>();
 
-        for (ClassEntity cls : classes) {
+        for (ClassSummary cls : classes) {
             Map<String, Object> classMap = new HashMap<>();
-            classMap.put("classId", cls.getClassId());
-            classMap.put("className", cls.getClassName());
-            classMap.put("description", cls.getDescription());
-            classMap.put("createdAt", cls.getCreatedAt());
-            classMap.put("updatedAt", cls.getUpdatedAt());
-            classMap.put("studentCount", cls.getStudents() != null ? cls.getStudents().size() : 0);
+            classMap.put("classId", cls.classId());
+            classMap.put("className", cls.className());
+            classMap.put("description", cls.description());
+            classMap.put("createdAt", cls.createdAt());
+            classMap.put("updatedAt", cls.updatedAt());
+            classMap.put("studentCount", cls.studentCount());
             classList.add(classMap);
         }
 
@@ -112,7 +113,7 @@ public class ClassController {
             return ResponseEntity.notFound().build();
         }
 
-        List<StudentEntity> students = classService.listStudents(classId);
+        List<StudentEntity> students = classService.listStudentsWithWorks(classId);
         List<Map<String, Object>> studentList = new ArrayList<>();
 
         for (StudentEntity student : students) {
@@ -121,6 +122,28 @@ public class ClassController {
             studentMap.put("studentName", student.getStudentName());
             studentMap.put("studentNumber", student.getStudentNumber());
             studentMap.put("createdAt", student.getCreatedAt());
+            studentMap.put("workCount", student.getStudentWorks() == null ? 0 : student.getStudentWorks().size());
+            int completedCount = 0;
+            int analyzingCount = 0;
+            int failedCount = 0;
+            if (student.getStudentWorks() != null) {
+                for (StudentWorkEntity studentWork : student.getStudentWorks()) {
+                    if (studentWork.getWorkTask() == null) {
+                        continue;
+                    }
+                    String status = studentWork.getWorkTask().getStatus();
+                    if ("completed".equals(status)) {
+                        completedCount++;
+                    } else if ("failed".equals(status)) {
+                        failedCount++;
+                    } else {
+                        analyzingCount++;
+                    }
+                }
+            }
+            studentMap.put("completedWorkCount", completedCount);
+            studentMap.put("analyzingWorkCount", analyzingCount);
+            studentMap.put("failedWorkCount", failedCount);
             studentList.add(studentMap);
         }
 
@@ -153,6 +176,7 @@ public class ClassController {
 
     // ====== 学生详情 ======
 
+    @Transactional(readOnly = true)
     @GetMapping("/students/{studentId}")
     public ResponseEntity<Map<String, Object>> getStudent(@PathVariable String studentId) {
         StudentEntity student = classService.getStudentWithWorks(studentId);
@@ -226,11 +250,12 @@ public class ClassController {
             @RequestBody Map<String, String> request
     ) {
         String taskId = request.get("taskId");
+        String assignmentId = request.get("assignmentId");
         if (taskId == null || taskId.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "任务ID不能为空"));
         }
 
-        StudentWorkEntity studentWork = classService.addWorkToStudent(studentId, taskId);
+        StudentWorkEntity studentWork = classService.addWorkToStudent(studentId, taskId, assignmentId);
         if (studentWork == null) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "关联失败，学生或任务不存在，或关联已存在"));
         }

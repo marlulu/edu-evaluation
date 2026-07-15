@@ -38,7 +38,7 @@ class WorkAnalysisOptions(BaseModel):
     """视频分析选项"""
     extract_keyframes: bool = Field(default=True, alias="extractKeyframes")
     keyframe_method: KeyframeMethod = Field(default=KeyframeMethod.HYBRID, alias="keyframeMethod")
-    max_keyframes: int = Field(default=50, ge=1, le=100, alias="maxKeyframes")
+    max_keyframes: int = Field(default=12, ge=1, le=100, alias="maxKeyframes")
     scene_threshold: float = Field(default=0.3, ge=0.1, le=0.9, alias="sceneThreshold")
     min_interval_seconds: float = Field(default=5.0, ge=1.0, le=30.0, alias="minIntervalSeconds")
     transcribe_audio: bool = Field(default=True, alias="transcribeAudio")
@@ -110,6 +110,18 @@ class ScoreItem(BaseModel):
     suggestion: str = ""   # 改进建议
 
 
+class DocumentConformityFinding(BaseModel):
+    claim: str
+    status: str
+    work_evidence: str = ""
+    related_dimension: str = ""
+
+
+class DocumentConformity(BaseModel):
+    summary: str = ""
+    findings: list[DocumentConformityFinding] = Field(default_factory=list)
+
+
 class EvaluationResult(BaseModel):
     """完整评估结果"""
     total_score: float                         # 总分（0-100）
@@ -119,6 +131,9 @@ class EvaluationResult(BaseModel):
     weaknesses: list[str] = []                 # 不足
     priority_suggestions: list[str] = []       # 优先改进建议
     criteria_text: str = ""                    # 使用的评分标准原文
+    brief_comment: str = ""
+    notes: list[str] = Field(default_factory=list)
+    document_conformity: DocumentConformity | None = None
 
 
 class ContentAnalysis(BaseModel):
@@ -175,9 +190,12 @@ class WorkAnalysisRequest(BaseModel):
     task_id: str = Field(default_factory=lambda: str(uuid4()))
     file_name: str
     file_path: str
+    image_paths: list[str] = Field(default_factory=list)
     options: WorkAnalysisOptions = Field(default_factory=WorkAnalysisOptions)
     callback_url: str | None = None
     criteria_text: str | None = None
+    supporting_document_name: str | None = None
+    supporting_document_text: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -189,8 +207,11 @@ class WorkAnalysisRequest(BaseModel):
                 "taskId": "task_id",
                 "fileName": "file_name",
                 "filePath": "file_path",
+                "imagePaths": "image_paths",
                 "callbackUrl": "callback_url",
                 "criteriaText": "criteria_text",
+                "supportingDocumentName": "supporting_document_name",
+                "supportingDocumentText": "supporting_document_text",
             }
             converted = {}
             for k, v in obj.items():

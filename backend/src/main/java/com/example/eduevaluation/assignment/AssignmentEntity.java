@@ -2,6 +2,8 @@ package com.example.eduevaluation.assignment;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "assignments")
@@ -25,6 +27,13 @@ public class AssignmentEntity {
 
     @Column(name = "class_id", length = 36)
     private String classId;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "assignment_classes",
+            joinColumns = @JoinColumn(name = "assignment_id"))
+    @Column(name = "class_id", length = 36)
+    private Set<String> classIds = new LinkedHashSet<>();
 
     @Column(columnDefinition = "DATETIME")
     private LocalDateTime deadline;
@@ -98,6 +107,15 @@ public class AssignmentEntity {
 
     public void setClassId(String classId) {
         this.classId = classId;
+    }
+
+    public Set<String> getClassIds() {
+        return classIds;
+    }
+
+    public void setClassIds(Set<String> classIds) {
+        this.classIds = classIds == null ? new LinkedHashSet<>() : new LinkedHashSet<>(classIds);
+        this.classId = this.classIds.stream().findFirst().orElse(null);
     }
 
     public LocalDateTime getDeadline() {

@@ -60,24 +60,6 @@ services:
       retries: 3
     restart: unless-stopped
 
-  rabbitmq:
-    image: rabbitmq:latest
-    container_name: edu-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-edu}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-
   # ---------- 应用服务 ----------
 
   ai-worker:
@@ -126,10 +108,6 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-edu}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       APP_AI_WORKER_BASE_URL: http://ai-worker:8000
       APP_STORAGE_ENDPOINT: http://minio:9000
       APP_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
@@ -168,4 +146,3 @@ volumes:
   mysql_data:
   redis_data:
   minio_data:
-  rabbitmq_data:

@@ -44,6 +44,7 @@ public class AssignmentController {
             map.put("description", a.getDescription());
             map.put("criteriaText", a.getCriteriaText());
             map.put("criteriaFileName", a.getCriteriaFileName());
+            map.put("classIds", a.getClassIds());
             map.put("classId", a.getClassId());
             map.put("deadline", a.getDeadline());
             map.put("status", a.getStatus());
@@ -68,6 +69,7 @@ public class AssignmentController {
         map.put("description", a.getDescription());
         map.put("criteriaText", a.getCriteriaText());
         map.put("criteriaFileName", a.getCriteriaFileName());
+        map.put("classIds", a.getClassIds());
         map.put("classId", a.getClassId());
         map.put("deadline", a.getDeadline());
         map.put("status", a.getStatus());
@@ -83,7 +85,7 @@ public class AssignmentController {
         String description = (String) request.get("description");
         String criteriaText = (String) request.get("criteriaText");
         String criteriaFileName = (String) request.get("criteriaFileName");
-        String classId = (String) request.get("classId");
+        Set<String> classIds = classIds(request);
 
         if (title == null || title.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "任务标题不能为空"));
@@ -103,7 +105,7 @@ public class AssignmentController {
                 description,
                 criteriaText,
                 criteriaFileName,
-                classId,
+                classIds,
                 deadline
         );
 
@@ -123,7 +125,8 @@ public class AssignmentController {
         String description = (String) request.get("description");
         String criteriaText = (String) request.get("criteriaText");
         String criteriaFileName = (String) request.get("criteriaFileName");
-        String classId = (String) request.get("classId");
+        Set<String> classIds = request.containsKey("classIds") || request.containsKey("classId")
+                ? classIds(request) : null;
         String status = (String) request.get("status");
 
         LocalDateTime deadline = null;
@@ -141,7 +144,7 @@ public class AssignmentController {
                 description,
                 criteriaText,
                 criteriaFileName,
-                classId,
+                classIds,
                 deadline,
                 status
         );
@@ -173,5 +176,23 @@ public class AssignmentController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(Map.of("success", true, "status", assignment.getStatus()));
+    }
+
+    private Set<String> classIds(Map<String, Object> request) {
+        Set<String> result = new LinkedHashSet<>();
+        Object raw = request.get("classIds");
+        if (raw instanceof Collection<?> values) {
+            values.stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .map(String::trim)
+                    .filter(value -> !value.isEmpty())
+                    .forEach(result::add);
+        }
+        Object legacy = request.get("classId");
+        if (legacy instanceof String value && !value.isBlank()) {
+            result.add(value.trim());
+        }
+        return result;
     }
 }

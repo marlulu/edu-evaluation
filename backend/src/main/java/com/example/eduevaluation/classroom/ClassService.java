@@ -34,6 +34,10 @@ public class ClassService {
         return classRepository.findAllByOrderByCreatedAtDesc();
     }
 
+    public List<ClassSummary> listClassSummaries() {
+        return classRepository.findAllSummariesOrderByCreatedAtDesc();
+    }
+
     public List<ClassEntity> listClassesWithStudents() {
         return classRepository.findAllWithStudentsOrderByCreatedAtDesc();
     }
@@ -128,6 +132,11 @@ public class ClassService {
 
     @Transactional
     public StudentWorkEntity addWorkToStudent(String studentId, String taskId) {
+        return addWorkToStudent(studentId, taskId, null);
+    }
+
+    @Transactional
+    public StudentWorkEntity addWorkToStudent(String studentId, String taskId, String assignmentId) {
         // 验证学生和任务存在
         if (!studentRepository.existsById(studentId) || !workTaskRepository.existsById(taskId)) {
             return null;
@@ -136,8 +145,14 @@ public class ClassService {
         if (studentWorkRepository.existsByStudentIdAndTaskId(studentId, taskId)) {
             return null;
         }
-        StudentWorkEntity studentWork = new StudentWorkEntity(UUID.randomUUID().toString(), studentId, taskId);
+        StudentWorkEntity studentWork = new StudentWorkEntity(
+                UUID.randomUUID().toString(), studentId, taskId, assignmentId);
         return studentWorkRepository.save(studentWork);
+    }
+
+    public boolean hasWorkForAssignment(String studentId, String assignmentId) {
+        return assignmentId != null
+                && studentWorkRepository.existsByStudentIdAndAssignmentId(studentId, assignmentId);
     }
 
     @Transactional
@@ -154,5 +169,10 @@ public class ClassService {
 
     public List<StudentWorkEntity> getStudentWorks(String studentId) {
         return studentWorkRepository.findByStudentIdOrderByCreatedAtDesc(studentId);
+    }
+
+    @Transactional
+    public void removeAllWorksForTask(String taskId) {
+        studentWorkRepository.deleteByTaskId(taskId);
     }
 }

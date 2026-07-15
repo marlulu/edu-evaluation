@@ -23,7 +23,9 @@ RUN mvn package -DskipTests -B
 
 # ---- Production Stage ----
 FROM eclipse-temurin:17-jre-alpine
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl docker-cli fontconfig ttf-dejavu \
+    && mkdir -p /usr/share/fonts/chinese \
+    && fc-cache -fv
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 # 由 docker-compose 注入环境变量

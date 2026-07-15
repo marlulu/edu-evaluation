@@ -1,30 +1,59 @@
 import {
+  AppstoreOutlined,
+  AudioOutlined,
+  BellOutlined,
   BookOutlined,
+  CloseOutlined,
   FileOutlined,
+  FileSearchOutlined,
+  FileAddOutlined,
   LogoutOutlined,
-  ScheduleOutlined,
+  MenuOutlined,
+  QuestionCircleOutlined,
+  SearchOutlined,
+  SettingOutlined,
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons';
-import { Avatar, Button, Card, Layout, Menu, Space, Tag, Typography, message } from 'antd';
+import { Avatar, Button, Card, Drawer, Input, Menu, Modal, Space, Tag, Typography, message } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { LoginPage, type LoginProfile, type UserRole } from './features/auth/LoginPage';
-import { WorkAnalysis } from './features/work-analysis/WorkAnalysis';
-import { ClassManagement } from './features/class-management/ClassManagement';
+import { LoginPage, type UserRole } from './features/auth/LoginPage';
+import {
+  clearSession,
+  fetchCurrentSession,
+  getStoredSession,
+  login,
+  persistSession,
+  type AuthSession
+} from './features/auth/api';
 import { AssignmentManagement } from './features/assignment-management/AssignmentManagement';
+import { AudioAnalysis } from './features/audio-analysis/AudioAnalysis';
+import { DocumentValidation } from './features/document-validation/DocumentValidation';
+import { SystemConfig } from './features/system-config/SystemConfig';
+import { StudentWorkspace } from './features/student-workspace/StudentWorkspace';
+import { StudentManagement } from './features/student-management/StudentManagement';
+import { WorkAnalysis } from './features/work-analysis/WorkAnalysis';
 
-const { Header, Sider, Content } = Layout;
 const { Paragraph, Text, Title } = Typography;
 
-type SessionUser = LoginProfile;
-type ModuleKey = 'dashboard' | 'work' | 'assignment' | 'class';
+type SessionUser = AuthSession;
+type ModuleKey = 'dashboard' | 'work' | 'assignment' | 'audio' | 'document' | 'config' | 'student' | 'students';
+type NavigationGroup = 'overview' | 'teaching' | 'evaluation' | 'system';
 
-const SESSION_KEY = 'edu-evaluation-session';
+const MODULE_KEY = 'edu-evaluation-active-module';
 
-const profiles: LoginProfile[] = [
+const profiles: Array<Record<string, string>> = [
   { username: 'admin', password: 'admin123', displayName: '系统管理员', role: 'ADMIN' },
   { username: 'teacher01', password: 'teacher123', displayName: '课程教师', role: 'TEACHER' },
+  { username: 'assistant01', password: 'assistant123', displayName: '教师助理', role: 'ASSISTANT' },
+  {
+    username: 'student01',
+    password: 'student123',
+    displayName: '学生',
+    role: 'STUDENT',
+    studentId: 'demo-student-001'
+  }
 ];
 
 const roleLabel: Record<UserRole, string> = {
@@ -35,45 +64,115 @@ const roleLabel: Record<UserRole, string> = {
 };
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
-  ADMIN: ['dashboard', 'assignment', 'work', 'class'],
-  TEACHER: ['dashboard', 'assignment', 'work', 'class'],
-  ASSISTANT: ['dashboard', 'assignment', 'class'],
-  STUDENT: ['dashboard']
+  ADMIN: ['config'],
+  TEACHER: ['dashboard', 'assignment', 'students', 'work', 'audio', 'document'],
+  ASSISTANT: ['dashboard', 'assignment', 'students', 'work', 'audio', 'document'],
+  STUDENT: ['student']
 };
 
 const moduleMeta: Record<
   ModuleKey,
-  { label: string; icon: ReactNode; description: string }
+  { label: string; icon: ReactNode; description: string; group: NavigationGroup }
 > = {
-  dashboard: { label: '工作台', icon: <BookOutlined />, description: '查看当前角色下的工作入口和模块概览。' },
-  assignment: { label: '布置任务', icon: <ScheduleOutlined />, description: '布置作业任务，设置评判标准。' },
-  work: { label: '作品分析', icon: <FileOutlined />, description: '上传作品进行元数据提取、语音识别、内容分析和评判标准评分。' },
-  class: { label: '班级管理', icon: <TeamOutlined />, description: '管理班级和学生，查看学生作品分析结果。' }
+  dashboard: {
+    label: '工作台',
+    icon: <AppstoreOutlined />,
+    description: '查看当前角色的工作入口和待处理事项。',
+    group: 'overview'
+  },
+  assignment: {
+    label: '作业任务',
+    icon: <BookOutlined />,
+    description: '布置任务并设置评价标准。',
+    group: 'teaching'
+  },
+  work: {
+    label: '作品评阅',
+    icon: <FileOutlined />,
+    description: '上传作品并查看智能分析与评分结果。',
+    group: 'evaluation'
+  },
+  audio: {
+    label: '音频分析',
+    icon: <AudioOutlined />,
+    description: '分析音频材料中的语音与内容信息。',
+    group: 'evaluation'
+  },
+  document: {
+    label: '文档校验',
+    icon: <FileSearchOutlined />,
+    description: '验证文档文字和表格的解析结果。',
+    group: 'evaluation'
+  },
+  config: {
+    label: '系统配置',
+    icon: <SettingOutlined />,
+    description: '管理模型配置与系统参数。',
+    group: 'system'
+  },
+  student: {
+    label: '我的任务',
+    icon: <FileAddOutlined />,
+    description: '查看关联任务并提交课程作业。',
+    group: 'overview'
+  },
+  students: {
+    label: '学生管理',
+    icon: <TeamOutlined />,
+    description: '维护学生信息、自定义组别和导入名单。',
+    group: 'teaching'
+  }
+};
+
+const navigationMeta: Record<NavigationGroup, string> = {
+  overview: '首页',
+  teaching: '教学管理',
+  evaluation: '智能评阅',
+  system: '系统管理'
 };
 
 export default function App() {
+  void profiles;
   const [apiMessage, contextHolder] = message.useMessage();
   const [loginLoading, setLoginLoading] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | undefined>();
-  const [activeModule, setActiveModule] = useState<ModuleKey>('dashboard');
+  const [activeModule, setActiveModule] = useState<ModuleKey>(() => {
+    const saved = localStorage.getItem(MODULE_KEY);
+    if (saved && ['dashboard', 'work', 'assignment', 'audio', 'document', 'config', 'student', 'students'].includes(saved)) {
+      return saved as ModuleKey;
+    }
+    return 'dashboard';
+  });
+  const [activeGroup, setActiveGroup] = useState<NavigationGroup>('overview');
 
   useEffect(() => {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) {
+    const stored = getStoredSession();
+    if (!stored) {
       return;
     }
-    try {
-      const parsed = JSON.parse(raw) as SessionUser;
-      setSessionUser(parsed);
-      setActiveModule(roleModules[parsed.role][0] ?? 'dashboard');
-    } catch {
-      localStorage.removeItem(SESSION_KEY);
-    }
+    void fetchCurrentSession()
+      .then((current) => setSessionUser({ ...current, accessToken: stored.accessToken }))
+      .catch(() => clearSession());
   }, []);
 
   const visibleModules = useMemo(
     () => (sessionUser ? roleModules[sessionUser.role] : []),
     [sessionUser]
+  );
+
+  const visibleGroups = useMemo(
+    () =>
+      (Object.keys(navigationMeta) as NavigationGroup[]).filter((group) =>
+        visibleModules.some((module) => moduleMeta[module].group === group)
+      ),
+    [visibleModules]
+  );
+
+  const groupModules = useMemo(
+    () => visibleModules.filter((module) => moduleMeta[module].group === activeGroup),
+    [activeGroup, visibleModules]
   );
 
   useEffect(() => {
@@ -82,99 +181,337 @@ export default function App() {
     }
   }, [activeModule, visibleModules]);
 
+  useEffect(() => {
+    if (sessionUser) {
+      setActiveGroup(moduleMeta[activeModule].group);
+      localStorage.setItem(MODULE_KEY, activeModule);
+    }
+  }, [activeModule, sessionUser]);
+
   async function handleLogin(values: { username: string; password: string }) {
     setLoginLoading(true);
     try {
-      const matched = profiles.find(
-        (profile) =>
-          profile.username === values.username.trim() &&
-          profile.password === values.password
-      );
-      if (!matched) {
+      const matched = await login(values.username.trim(), values.password);
+      if (!matched.accessToken) {
         apiMessage.error('账号或密码不正确');
         return;
       }
       setSessionUser(matched);
       setActiveModule(roleModules[matched.role][0] ?? 'dashboard');
-      localStorage.setItem(SESSION_KEY, JSON.stringify(matched));
+      persistSession(matched);
+      setLoginOpen(false);
       apiMessage.success(`欢迎回来，${matched.displayName}`);
+    } catch {
+      apiMessage.error('登录失败，请检查账号密码或后端服务状态');
     } finally {
       setLoginLoading(false);
     }
   }
 
   function handleLogout() {
-    localStorage.removeItem(SESSION_KEY);
+    clearSession();
     setSessionUser(undefined);
     setActiveModule('dashboard');
+    setActiveGroup('overview');
   }
 
-  if (!sessionUser) {
-    return (
-      <>
-        {contextHolder}
-        <LoginPage onLogin={handleLogin} loading={loginLoading} profiles={profiles} />
-      </>
-    );
+  function selectGroup(group: NavigationGroup) {
+    setActiveGroup(group);
+    const nextModule = visibleModules.find((module) => moduleMeta[module].group === group);
+    if (nextModule) {
+      setActiveModule(nextModule);
+    }
   }
 
   return (
-    <>
+    <div className="app-shell">
       {contextHolder}
-      <Layout className="shell-layout">
-        <Sider width={248} theme="light" className="shell-sider">
-          <div className="brand-block">
-            <Tag color="processing">AI Work</Tag>
-            <Title level={4} className="brand-title">
-              作品分析系统
-            </Title>
-            <Text type="secondary">上传作品进行智能分析</Text>
-          </div>
-          <Menu
-            mode="inline"
-            selectedKeys={[activeModule]}
-            items={visibleModules.map((moduleKey) => ({
-              key: moduleKey,
-              icon: moduleMeta[moduleKey].icon,
-              label: moduleMeta[moduleKey].label
-            }))}
-            onClick={({ key }) => setActiveModule(key as ModuleKey)}
-          />
-        </Sider>
-        <Layout>
-          <Header className="shell-header">
-            <div>
-              <Title level={4} className="page-title">
-                {moduleMeta[activeModule].label}
-              </Title>
-              <Text type="secondary">{moduleMeta[activeModule].description}</Text>
-            </div>
-            <Space size={16}>
-              <Tag color="blue">{roleLabel[sessionUser.role]}</Tag>
-              <Space>
-                <Avatar icon={<UserOutlined />} />
-                <div className="user-meta">
-                  <Text strong>{sessionUser.displayName}</Text>
-                  <Text type="secondary">{sessionUser.username}</Text>
-                </div>
-              </Space>
-              <Button icon={<LogoutOutlined />} onClick={handleLogout}>
-                退出登录
-              </Button>
-            </Space>
-          </Header>
-          <Content className="shell-content">
-            {activeModule === 'dashboard' && (
-              <Dashboard user={sessionUser} visibleModules={visibleModules} onSelect={setActiveModule} />
-            )}
-            {activeModule === 'assignment' && <AssignmentManagement />}
-            {activeModule === 'work' && <WorkAnalysis />}
-            {activeModule === 'class' && <ClassManagement />}
-          </Content>
-        </Layout>
-      </Layout>
-    </>
+      <GlobalHeader
+        authenticated={Boolean(sessionUser)}
+        sessionUser={sessionUser}
+        activeGroup={activeGroup}
+        visibleGroups={visibleGroups}
+        visibleModules={visibleModules}
+        groupModules={groupModules}
+        activeModule={activeModule}
+        onLogin={() => setLoginOpen(true)}
+        onLogout={handleLogout}
+        onSelectGroup={selectGroup}
+        onSelectModule={setActiveModule}
+        mobileNavigationOpen={mobileNavigationOpen}
+        onOpenMobileNavigation={() => setMobileNavigationOpen(true)}
+        onCloseMobileNavigation={() => setMobileNavigationOpen(false)}
+      />
+
+      <main className="app-main">
+        <div className="page-canvas">
+          {sessionUser ? (
+            <AuthenticatedContent
+              activeModule={activeModule}
+              user={sessionUser}
+              visibleModules={visibleModules}
+              onSelect={setActiveModule}
+            />
+          ) : (
+            <PublicCanvas onLogin={() => setLoginOpen(true)} />
+          )}
+        </div>
+      </main>
+
+      <Modal
+        open={loginOpen}
+        footer={null}
+        width={420}
+        centered
+        destroyOnClose
+        onCancel={() => setLoginOpen(false)}
+        className="login-modal"
+      >
+        <LoginPage onLogin={handleLogin} loading={loginLoading} />
+      </Modal>
+    </div>
   );
+}
+
+function GlobalHeader({
+  authenticated,
+  sessionUser,
+  activeGroup,
+  visibleGroups,
+  visibleModules,
+  groupModules,
+  activeModule,
+  onLogin,
+  onLogout,
+  onSelectGroup,
+  onSelectModule,
+  mobileNavigationOpen,
+  onOpenMobileNavigation,
+  onCloseMobileNavigation
+}: {
+  authenticated: boolean;
+  sessionUser: SessionUser | undefined;
+  activeGroup: NavigationGroup;
+  visibleGroups: NavigationGroup[];
+  visibleModules: ModuleKey[];
+  groupModules: ModuleKey[];
+  activeModule: ModuleKey;
+  onLogin: () => void;
+  onLogout: () => void;
+  onSelectGroup: (group: NavigationGroup) => void;
+  onSelectModule: (module: ModuleKey) => void;
+  mobileNavigationOpen: boolean;
+  onOpenMobileNavigation: () => void;
+  onCloseMobileNavigation: () => void;
+}) {
+  const groups = visibleGroups;
+
+  return (
+    <header className="global-header">
+      <div className="utility-bar">
+        {authenticated && (
+          <Button
+            type="text"
+            shape="circle"
+            className="mobile-nav-trigger"
+            icon={<MenuOutlined />}
+            aria-label="打开导航"
+            onClick={onOpenMobileNavigation}
+          />
+        )}
+        <div className="brand-mark" aria-label="AI 课程作业评价系统">
+          <span className="brand-bars" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+          <span>
+            <strong>智评课堂</strong>
+            <small>AI COURSEWORK</small>
+          </span>
+        </div>
+
+        <Button type="text" className="channel-button">
+          全部频道
+        </Button>
+
+        <Input
+          className="global-search"
+          aria-label="全局搜索"
+          placeholder="搜索课程、任务或学生"
+          prefix={<SearchOutlined />}
+          readOnly
+        />
+
+        <Space size={6} className="utility-actions">
+          <Button type="text" shape="circle" icon={<QuestionCircleOutlined />} aria-label="帮助" />
+          <Button type="text" shape="circle" icon={<BellOutlined />} aria-label="通知" />
+          {authenticated && sessionUser ? (
+            <>
+              <Tag color="blue" className="role-tag">
+                {roleLabel[sessionUser.role]}
+              </Tag>
+              <Button type="text" className="account-button" onClick={onLogout}>
+                <Avatar size={30} icon={<UserOutlined />} />
+                <span className="account-name">{sessionUser.displayName}</span>
+                <LogoutOutlined />
+              </Button>
+            </>
+          ) : (
+            <Button type="text" className="account-button" onClick={onLogin}>
+              <Avatar size={30} icon={<UserOutlined />} />
+              <span className="account-name">登录</span>
+            </Button>
+          )}
+        </Space>
+      </div>
+
+      {authenticated && (
+        <div className="navigation-band">
+          <nav className="primary-navigation" aria-label="主导航">
+            {groups.map((group) => (
+              <Button
+                key={group}
+                type="text"
+                className={group === activeGroup ? 'nav-button nav-button-active' : 'nav-button'}
+                onClick={() => onSelectGroup(group)}
+              >
+                {navigationMeta[group]}
+              </Button>
+            ))}
+          </nav>
+
+          {groupModules.length > 0 && (
+          <Menu
+            mode="horizontal"
+            selectedKeys={[activeModule]}
+            className="context-navigation"
+            items={groupModules.map((module) => ({
+              key: module,
+              icon: moduleMeta[module].icon,
+              label: moduleMeta[module].label
+            }))}
+            onClick={({ key }) => onSelectModule(key as ModuleKey)}
+          />
+          )}
+        </div>
+      )}
+
+      {authenticated && (
+        <Drawer
+        placement="left"
+        width={280}
+        open={mobileNavigationOpen}
+        closable={false}
+        className="mobile-navigation-drawer"
+        onClose={onCloseMobileNavigation}
+        title={
+          <div className="drawer-title">
+            <span>导航</span>
+            <Button
+              type="text"
+              shape="circle"
+              icon={<CloseOutlined />}
+              aria-label="关闭导航"
+              onClick={onCloseMobileNavigation}
+            />
+          </div>
+        }
+      >
+        <Menu
+          mode="inline"
+          selectedKeys={authenticated ? [activeModule] : [activeGroup]}
+          items={
+            authenticated
+              ? groups.flatMap((group) =>
+                  visibleModules
+                    .filter((module) => moduleMeta[module].group === group)
+                    .map((module) => ({
+                    key: module,
+                    icon: moduleMeta[module].icon,
+                    label: moduleMeta[module].label
+                    }))
+                )
+              : groups.map((group) => ({ key: group, label: navigationMeta[group] }))
+          }
+          onClick={({ key }) => {
+            if (authenticated) {
+              onSelectModule(key as ModuleKey);
+            }
+            onCloseMobileNavigation();
+          }}
+        />
+        </Drawer>
+      )}
+    </header>
+  );
+}
+
+function PublicCanvas({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="public-canvas">
+      <section className="public-intro">
+        <Tag color="blue">教学评价平台</Tag>
+        <Title>让课程作业评价更清晰、更高效</Title>
+        <Paragraph>
+          面向课程教学的统一工作空间。任务组织、作品分析与结果反馈将在这里形成连贯的工作流。
+        </Paragraph>
+        <Button type="primary" size="large" onClick={onLogin}>
+          登录进入系统
+        </Button>
+      </section>
+
+      <section className="public-grid" aria-label="平台能力概览">
+        {[
+          ['课程任务', '围绕教学节奏组织任务与提交。'],
+          ['智能评阅', '在统一工作区中查看多维分析结果。'],
+          ['结果反馈', '让教师和学生清晰掌握评价进度。']
+        ].map(([title, description]) => (
+          <Card key={title} className="overview-card">
+            <Title level={4}>{title}</Title>
+            <Text type="secondary">{description}</Text>
+          </Card>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function AuthenticatedContent({
+  activeModule,
+  user,
+  visibleModules,
+  onSelect
+}: {
+  activeModule: ModuleKey;
+  user: SessionUser;
+  visibleModules: ModuleKey[];
+  onSelect: (module: ModuleKey) => void;
+}) {
+  if (activeModule === 'assignment') {
+    return <AssignmentManagement />;
+  }
+  if (activeModule === 'work') {
+    return <WorkAnalysis />;
+  }
+  if (activeModule === 'audio') {
+    return <AudioAnalysis />;
+  }
+  if (activeModule === 'document') {
+    return <DocumentValidation />;
+  }
+  if (activeModule === 'config') {
+    return <SystemConfig />;
+  }
+  if (activeModule === 'student') {
+    return <StudentWorkspace studentName={user.displayName} />;
+  }
+  if (activeModule === 'students') {
+    return <StudentManagement />;
+  }
+
+  return <Dashboard user={user} visibleModules={visibleModules} onSelect={onSelect} />;
 }
 
 function Dashboard({
@@ -188,34 +525,23 @@ function Dashboard({
 }) {
   return (
     <Space direction="vertical" size={20} className="content-stack">
-      <Card className="hero-card">
-        <Space direction="vertical" size={8}>
-          <Tag color="processing">{roleLabel[user.role]}</Tag>
-          <Title level={2} className="compact-title">
-            {user.displayName}，欢迎进入工作台
-          </Title>
-          <Paragraph type="secondary" className="detail-paragraph">
-            本系统专注于作品智能分析，支持作品上传、元数据提取、语音识别、内容分析和质量评估。
-          </Paragraph>
-        </Space>
-      </Card>
+      <section className="page-heading">
+        <div>
+          <Tag color="blue">{roleLabel[user.role]}</Tag>
+          <Title level={2}>欢迎回来，{user.displayName}</Title>
+          <Paragraph type="secondary">从下方入口继续处理课程任务和评价工作。</Paragraph>
+        </div>
+      </section>
 
       <div className="dashboard-grid">
         {visibleModules
-          .filter((moduleKey) => moduleKey !== 'dashboard')
-          .map((moduleKey) => (
-            <Card
-              key={moduleKey}
-              hoverable
-              className="dashboard-card"
-              onClick={() => onSelect(moduleKey)}
-            >
+          .filter((module) => module !== 'dashboard')
+          .map((module) => (
+            <Card key={module} hoverable className="dashboard-card" onClick={() => onSelect(module)}>
               <Space direction="vertical" size={10}>
-                <span className="card-icon">{moduleMeta[moduleKey].icon}</span>
-                <Title level={4} className="compact-title">
-                  {moduleMeta[moduleKey].label}
-                </Title>
-                <Text type="secondary">{moduleMeta[moduleKey].description}</Text>
+                <span className="card-icon">{moduleMeta[module].icon}</span>
+                <Title level={4}>{moduleMeta[module].label}</Title>
+                <Text type="secondary">{moduleMeta[module].description}</Text>
               </Space>
             </Card>
           ))}

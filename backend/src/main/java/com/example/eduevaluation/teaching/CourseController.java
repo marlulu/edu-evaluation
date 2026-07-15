@@ -1,0 +1,73 @@
+package com.example.eduevaluation.teaching;
+
+import com.example.eduevaluation.auth.AppPrincipal;
+import jakarta.validation.Valid;
+import java.net.URI;
+import java.util.List;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/courses")
+public class CourseController {
+
+    private final CourseService courseService;
+
+    public CourseController(CourseService courseService) {
+        this.courseService = courseService;
+    }
+
+    @GetMapping
+    public List<CourseResponse> list(@RequestParam(required = false) CourseStatus status, @AuthenticationPrincipal AppPrincipal principal) {
+        return courseService.list(status, principal);
+    }
+
+    @GetMapping("/{courseId}")
+    public CourseResponse get(@PathVariable String courseId, @AuthenticationPrincipal AppPrincipal principal) {
+        return courseService.get(courseId, principal);
+    }
+
+    @GetMapping("/options")
+    public CourseOptionsResponse options(@AuthenticationPrincipal AppPrincipal principal) {
+        return courseService.options(principal);
+    }
+
+    @PostMapping
+    public ResponseEntity<CourseResponse> create(@Valid @RequestBody CreateCourseRequest request, @AuthenticationPrincipal AppPrincipal principal) {
+        CourseResponse course = courseService.create(request, principal);
+        return ResponseEntity.created(URI.create("/api/courses/" + course.id())).body(course);
+    }
+
+    @PutMapping("/{courseId}")
+    public CourseResponse update(
+            @PathVariable String courseId,
+            @Valid @RequestBody UpdateCourseRequest request,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return courseService.update(courseId, request, principal);
+    }
+
+    @PutMapping("/{courseId}/status")
+    public CourseResponse updateStatus(
+            @PathVariable String courseId,
+            @Valid @RequestBody CourseStatusRequest request,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return courseService.updateStatus(courseId, request.status(), principal);
+    }
+
+    @DeleteMapping("/{courseId}")
+    public ResponseEntity<Void> delete(@PathVariable String courseId, @AuthenticationPrincipal AppPrincipal principal) {
+        courseService.delete(courseId, principal);
+        return ResponseEntity.noContent().build();
+    }
+}

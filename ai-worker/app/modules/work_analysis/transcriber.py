@@ -28,6 +28,9 @@ class TranscriptionResult:
     en_words: int = 0
     speech_rate: float = 0.0  # 字/分钟
     filler_words: dict[str, int] = field(default_factory=dict)
+    reliable: bool = True
+    quality_score: float = 1.0
+    quality_warning: str = ""
 
 
 def transcribe_with_whisper_api(
@@ -55,14 +58,16 @@ def transcribe_with_whisper_api(
         result = TranscriptionResult(language=language)
 
         for segment in response.segments:
+            segment_text = segment.get("text") if isinstance(segment, dict) else getattr(segment, "text", "")
             result.segments.append(TranscriptionSegment(
-                start_time=segment["start"],
-                end_time=segment["end"],
-                text=segment["text"],
-                confidence=segment.get("avg_logprob"),
+                start_time=segment["start"] if isinstance(segment, dict) else segment.start,
+                end_time=segment["end"] if isinstance(segment, dict) else segment.end,
+                text=str(segment_text or "").strip(),
+                confidence=segment.get("avg_logprob") if isinstance(segment, dict)
+                else getattr(segment, "avg_logprob", None),
             ))
 
-        result.full_text = " ".join(seg.text for seg in result.segments)
+        result.full_text = " ".join(seg.text for seg in result.segments if seg.text)
         _calculate_statistics(result)
 
         return result
@@ -94,11 +99,11 @@ def transcribe_with_local_whisper(
             transcription.segments.append(TranscriptionSegment(
                 start_time=segment["start"],
                 end_time=segment["end"],
-                text=segment["text"],
+                text=str(segment.get("text") or "").strip(),
                 confidence=segment.get("avg_logprob"),
             ))
 
-        transcription.full_text = result.get("text", "")
+        transcription.full_text = str(result.get("text") or "")
         _calculate_statistics(transcription)
 
         return transcription
@@ -132,7 +137,7 @@ def transcribe_with_faster_whisper(
             transcription.segments.append(TranscriptionSegment(
                 start_time=segment.start,
                 end_time=segment.end,
-                text=segment.text.strip(),
+                text=str(segment.text or "").strip(),
                 confidence=segment.avg_logprob,
             ))
 
@@ -152,7 +157,8 @@ def _calculate_statistics(result: TranscriptionResult) -> None:
     """计算转录统计信息"""
     import re
 
-    text = result.full_text
+    text = str(result.full_text or "")
+    result.full_text = text
 
     # 字数统计
     result.cn_chars = len(re.findall(r'[一-鿿]', text))
@@ -172,11 +178,51 @@ def _calculate_statistics(result: TranscriptionResult) -> None:
         if count >= 2:
             result.filler_words[fw] = count
 
+    _assess_transcription_quality(result)
+
+
+def _assess_transcription_quality(result: TranscriptionResult) -> None:
+    """Mark distorted or hallucinated transcripts as unsafe scoring evidence."""
+    if result.total_chars < 10 or not result.segments:
+        result.reliable = False
+        result.quality_score = 0.0
+        result.quality_warning = "有效转录内容过少，ASR 结果不参与评分。"
+        return
+
+    confidence_values = [
+        segment.confidence
+        for segment in result.segments
+        if segment.confidence is not None
+    ]
+    confidence_score = 1.0
+    if confidence_values:
+        average_log_probability = sum(confidence_values) / len(confidence_values)
+        confidence_score = max(0.0, min(1.0, (average_log_probability + 1.5) / 1.2))
+
+    normalized_segments = [
+        "".join(segment.text.lower().split())
+        for segment in result.segments
+        if segment.text.strip()
+    ]
+    duplicate_ratio = (
+        1 - len(set(normalized_segments)) / len(normalized_segments)
+        if normalized_segments
+        else 1.0
+    )
+    repetition_score = max(0.0, 1.0 - duplicate_ratio * 1.5)
+    result.quality_score = round(confidence_score * 0.7 + repetition_score * 0.3, 2)
+
+    if result.quality_score < 0.45 or duplicate_ratio >= 0.6:
+        result.reliable = False
+        result.quality_warning = "ASR 转录可信度过低或存在大量重复，不参与内容判断和评分。"
+
 
 def build_speech_analysis(transcription: TranscriptionResult, audio_features, metadata) -> str:
     """构建语音节奏分析文本"""
     if not transcription or not transcription.full_text:
         return "（语音转录不可用）"
+    if not transcription.reliable:
+        return f"（{transcription.quality_warning}）"
 
     import re
 

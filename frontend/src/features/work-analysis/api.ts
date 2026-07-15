@@ -325,6 +325,8 @@ export async function getWorkTaskStatus(taskId: string): Promise<WorkAnalysisRes
   };
 }
 
+export const getWorkTaskDetail = getWorkTaskStatus;
+
 export async function getWorkTaskProgress(taskId: string): Promise<{
   taskId: string;
   status: WorkTaskStatus;

@@ -83,36 +83,13 @@ services:
         max-size: "5m"
         max-file: "2"
 
-  rabbitmq:
-    image: rabbitmq:4-management
-    container_name: edu-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-edu}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    ports:
-      - "127.0.0.1:5672:5672"
-      - "127.0.0.1:15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    restart: always
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "2"
-
   # ---------- 应用服务 ----------
 
   ai-worker:
-    build:
-      context: ../ai-worker
-      dockerfile: Dockerfile
+    image: edu-ai-worker:latest
     container_name: edu-ai-worker
+    volumes:
+      - upload_data:/app/data/uploads
     environment:
       # 模型配置
       MODEL_API_BASE_URL: ${MODEL_API_BASE_URL}
@@ -152,11 +129,18 @@ services:
         max-file: "3"
 
   backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    image: edu-backend:latest
     container_name: edu-backend
+    volumes:
+      - upload_data:/app/data/uploads
+      - ./.env:/app/.env
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/app/deploy:ro
     environment:
+      # 配置文件路径
+      APP_ENV_PATH: /app/.env
+      APP_DOCKER_COMPOSE_DIR: /app/deploy
+      APP_DOCKER_COMPOSE_PATH: docker-compose.prod.yml
       # Spring Profile
       SPRING_PROFILES_ACTIVE: prod
       # 数据库
@@ -167,11 +151,6 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password}
-      # RabbitMQ
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-edu}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       # AI Worker
       APP_AI_WORKER_BASE_URL: http://ai-worker:8000
       # MinIO
@@ -203,18 +182,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  nginx:
-    image: nginx:alpine
+  frontend:
+    image: edu-frontend:latest
     container_name: edu-nginx
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ../frontend/dist:/usr/share/nginx/html:ro
-      - nginx_logs:/var/log/nginx
+      - "${APP_PORT:-80}:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -234,5 +206,5 @@ volumes:
   mysql_data:
   redis_data:
   minio_data:
-  rabbitmq_data:
   nginx_logs:
+  upload_data:

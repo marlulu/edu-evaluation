@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -38,13 +39,13 @@ public class AssignmentService {
             String description,
             String criteriaText,
             String criteriaFileName,
-            String classId,
+            Set<String> classIds,
             LocalDateTime deadline
     ) {
         AssignmentEntity assignment = new AssignmentEntity(UUID.randomUUID().toString(), title, description);
         assignment.setCriteriaText(criteriaText);
         assignment.setCriteriaFileName(criteriaFileName);
-        assignment.setClassId(classId);
+        assignment.setClassIds(classIds);
         assignment.setDeadline(deadline);
         return assignmentRepository.save(assignment);
     }
@@ -56,7 +57,7 @@ public class AssignmentService {
             String description,
             String criteriaText,
             String criteriaFileName,
-            String classId,
+            Set<String> classIds,
             LocalDateTime deadline,
             String status
     ) {
@@ -77,8 +78,8 @@ public class AssignmentService {
         if (criteriaFileName != null) {
             assignment.setCriteriaFileName(criteriaFileName);
         }
-        if (classId != null) {
-            assignment.setClassId(classId);
+        if (classIds != null) {
+            assignment.setClassIds(classIds);
         }
         if (deadline != null) {
             assignment.setDeadline(deadline);

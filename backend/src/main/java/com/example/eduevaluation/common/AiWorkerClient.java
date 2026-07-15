@@ -5,9 +5,18 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 @Component
 @ConfigurationProperties(prefix = "app.ai-worker")
@@ -46,6 +55,71 @@ public class AiWorkerClient {
         RestTemplate restTemplate = createEvaluationRestTemplate();
         String url = baseUrl + evaluationTaskPath;
         return restTemplate.postForObject(url, request, Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> validateDocument(MultipartFile file) {
+        return validateDocument(file.getResource(), file.getOriginalFilename());
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> validateDocument(Resource resource, String fileName) {
+        RestTemplate restTemplate = createRestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new HttpEntity<>(resource, fileHeaders(fileName)));
+        try {
+            return restTemplate.postForObject(
+                    baseUrl + "/document-validation/parse",
+                    new HttpEntity<>(body, headers),
+                    Map.class);
+        } catch (HttpStatusCodeException exception) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    exception.getStatusCode(),
+                    extractUpstreamMessage(exception.getResponseBodyAsString()),
+                    exception);
+        } catch (RestClientException exception) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "文档解析服务暂时不可用，请稍后重试。",
+                    exception);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> analyzeWorkAsync(Map<String, Object> request) {
+        return createRestTemplate().postForObject(
+                baseUrl + "/work/analyze/async", request, Map.class);
+    }
+
+    private HttpHeaders fileHeaders(String fileName) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentDispositionFormData("file", fileName);
+        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        return headers;
+    }
+
+    private String extractUpstreamMessage(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return "文档解析服务请求失败。";
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode detail =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(responseBody).path("detail");
+            if (detail.isTextual()) {
+                return detail.asText();
+            }
+            if (detail.hasNonNull("message")) {
+                return detail.path("message").asText();
+            }
+            if (detail.isArray() && !detail.isEmpty() && detail.get(0).hasNonNull("msg")) {
+                return detail.get(0).path("msg").asText();
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
+            // Fall back to a stable localized message.
+        }
+        return "文档解析服务请求失败。";
     }
 
     public String getBaseUrl() {

@@ -13,4 +13,8 @@ public interface StudentWorkRepository extends JpaRepository<StudentWorkEntity, 
     List<StudentWorkEntity> findByTaskId(String taskId);
 
     boolean existsByStudentIdAndTaskId(String studentId, String taskId);
+
+    boolean existsByStudentIdAndAssignmentId(String studentId, String assignmentId);
+
+    void deleteByTaskId(String taskId);
 }

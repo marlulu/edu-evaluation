@@ -10,7 +10,7 @@
 
 - 建立前端、后端、AI Worker 和基础设施的工程边界。
 - 提供最小可运行服务入口。
-- 预留 MySQL、Redis、MinIO、RabbitMQ 和 AI Worker 的配置。
+- 预留 MySQL、Redis、MinIO 和 AI Worker 的配置。
 - 提供本地开发和后续部署的基础路径。
 
 ## 2. 目录结构
@@ -30,7 +30,7 @@
 - `frontend/` 负责浏览器 UI、页面路由和管理端交互。
 - `backend/` 负责公开 API、业务编排、持久化入口和异步任务调度。
 - `ai-worker/` 负责后续文件抽取、OCR/ASR、视频处理和模型评价任务。
-- `infra/` 负责本地 MySQL、Redis、MinIO、RabbitMQ 等依赖服务。
+- `infra/` 负责本地 MySQL、Redis、MinIO 等依赖服务。
 
 ### 2.1 基础模块位置
 
@@ -73,10 +73,9 @@
 - Spring Validation
 - Spring Boot Actuator
 - Spring Data Redis
-- Spring AMQP
 - MySQL Connector/J
 
-后端当前提供 `/api/health` 健康接口，并预留 MySQL、Redis、RabbitMQ、MinIO 和 AI Worker 的配置项。
+后端当前提供 `/api/health` 健康接口，并预留 MySQL、Redis、MinIO 和 AI Worker 的配置项。
 
 作业管理模块当前提供非 AI 的可运行 MVP，接口前缀为 `/api/assignment-management`：
 
@@ -144,14 +143,12 @@ AI Worker 当前提供 `/health` 健康接口。后续用于文件内容抽取�
 - MySQL `8.4`
 - Redis `7.4-alpine`
 - MinIO `RELEASE.2024-12-18T13-15-44Z`
-- RabbitMQ `4.0-management`
 
 默认用途：
 
 - MySQL：业务数据源。
 - Redis：缓存和轻量运行状态。
 - MinIO：原始提交文件和衍生文件存储。
-- RabbitMQ：异步解析和评价任务队列。
 
 ## 4. 本地启动方式
 
@@ -271,8 +268,6 @@ curl http://localhost:8001/health
 | Redis | `localhost:6379` |
 | MinIO API | `http://localhost:9000` |
 | MinIO Console | `http://localhost:9001` |
-| RabbitMQ AMQP | `localhost:5672` |
-| RabbitMQ Management | `http://localhost:15672` |
 
 默认账号：
 
@@ -281,7 +276,6 @@ curl http://localhost:8001/health
 | MySQL | `edu` | `edu_password` |
 | MySQL root | `root` | `root_password` |
 | MinIO | `minio` | `minio_password` |
-| RabbitMQ | `edu` | `edu_password` |
 
 ## 6. 构建与验证
 
@@ -334,7 +328,7 @@ python -m compileall app
 
 适用于开发、演示和课程原型验证：
 
-1. 使用 Docker Compose 启动 MySQL、Redis、MinIO 和 RabbitMQ。
+1. 使用 Docker Compose 启动 MySQL、Redis 和 MinIO。
 2. 使用 `npm run dev` 启动前端开发服务。
 3. 使用 `mvn spring-boot:run` 启动后端。
 4. 需要 AI 处理能力时启动 `uvicorn app.main:app --reload --port 8001`。
@@ -354,7 +348,7 @@ python -m compileall app
 推荐流量路径：
 
 ```text
-Browser -> Nginx/Frontend -> Backend API -> RabbitMQ/Redis/MySQL/MinIO -> AI Worker
+Browser -> Nginx/Frontend -> Backend API -> Redis/MySQL/MinIO -> AI Worker
 ```
 
 前端不应直接调用 AI Worker。所有业务请求应进入后端，由后端统一做鉴权、审计、任务编排和结果落库。
@@ -369,7 +363,6 @@ Browser -> Nginx/Frontend -> Backend API -> RabbitMQ/Redis/MySQL/MinIO -> AI Wor
 - MySQL 使用定期备份、主从或云数据库。
 - Redis 启用持久化或使用托管实例。
 - MinIO 使用独立磁盘和备份策略，或替换为云对象存储。
-- RabbitMQ 开启管理、监控和持久化队列配置。
 
 生产环境还需要补充：
 
