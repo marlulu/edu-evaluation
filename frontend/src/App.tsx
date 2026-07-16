@@ -4,7 +4,6 @@ import {
   BellOutlined,
   BookOutlined,
   CloseOutlined,
-  FileOutlined,
   FileSearchOutlined,
   FileAddOutlined,
   LogoutOutlined,
@@ -24,21 +23,22 @@ import {
   fetchCurrentSession,
   getStoredSession,
   login,
+  registerStudent,
+  registerTeacher,
   persistSession,
   type AuthSession
 } from './features/auth/api';
-import { AssignmentManagement } from './features/assignment-management/AssignmentManagement';
 import { AudioAnalysis } from './features/audio-analysis/AudioAnalysis';
 import { DocumentValidation } from './features/document-validation/DocumentValidation';
 import { SystemConfig } from './features/system-config/SystemConfig';
 import { StudentWorkspace } from './features/student-workspace/StudentWorkspace';
 import { StudentManagement } from './features/student-management/StudentManagement';
-import { WorkAnalysis } from './features/work-analysis/WorkAnalysis';
+import TeachingManagement from './features/teaching-management/TeachingManagement';
 
 const { Paragraph, Text, Title } = Typography;
 
 type SessionUser = AuthSession;
-type ModuleKey = 'dashboard' | 'work' | 'assignment' | 'audio' | 'document' | 'config' | 'student' | 'students';
+type ModuleKey = 'dashboard' | 'teaching' | 'audio' | 'document' | 'config' | 'student' | 'students';
 type NavigationGroup = 'overview' | 'teaching' | 'evaluation' | 'system';
 
 const MODULE_KEY = 'edu-evaluation-active-module';
@@ -65,8 +65,8 @@ const roleLabel: Record<UserRole, string> = {
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
   ADMIN: ['config'],
-  TEACHER: ['dashboard', 'assignment', 'students', 'work', 'audio', 'document'],
-  ASSISTANT: ['dashboard', 'assignment', 'students', 'work', 'audio', 'document'],
+  TEACHER: ['dashboard', 'teaching', 'students', 'audio', 'document'],
+  ASSISTANT: ['dashboard', 'teaching', 'students', 'audio', 'document'],
   STUDENT: ['student']
 };
 
@@ -80,17 +80,11 @@ const moduleMeta: Record<
     description: '查看当前角色的工作入口和待处理事项。',
     group: 'overview'
   },
-  assignment: {
-    label: '作业任务',
+  teaching: {
+    label: '课程管理',
     icon: <BookOutlined />,
-    description: '布置任务并设置评价标准。',
+    description: '管理课程、课程成员和课程任务。',
     group: 'teaching'
-  },
-  work: {
-    label: '作品评阅',
-    icon: <FileOutlined />,
-    description: '上传作品并查看智能分析与评分结果。',
-    group: 'evaluation'
   },
   audio: {
     label: '音频分析',
@@ -140,7 +134,7 @@ export default function App() {
   const [sessionUser, setSessionUser] = useState<SessionUser | undefined>();
   const [activeModule, setActiveModule] = useState<ModuleKey>(() => {
     const saved = localStorage.getItem(MODULE_KEY);
-    if (saved && ['dashboard', 'work', 'assignment', 'audio', 'document', 'config', 'student', 'students'].includes(saved)) {
+    if (saved && ['dashboard', 'teaching', 'audio', 'document', 'config', 'student', 'students'].includes(saved)) {
       return saved as ModuleKey;
     }
     return 'dashboard';
@@ -208,6 +202,36 @@ export default function App() {
     }
   }
 
+  async function handleRegister(values: {
+    role: 'TEACHER' | 'STUDENT';
+    username: string;
+    password: string;
+    displayName?: string;
+    studentNumber?: string;
+    initialPassword?: string;
+  }) {
+    setLoginLoading(true);
+    try {
+      const session = values.role === 'TEACHER'
+        ? await registerTeacher({ username: values.username, password: values.password, displayName: values.displayName ?? '' })
+        : await registerStudent({
+          username: values.username,
+          password: values.password,
+          studentNumber: values.studentNumber ?? '',
+          initialPassword: values.initialPassword ?? ''
+        });
+      setSessionUser(session);
+      persistSession(session);
+      setActiveModule(roleModules[session.role][0] ?? 'dashboard');
+      setLoginOpen(false);
+      apiMessage.success('注册成功');
+    } catch {
+      apiMessage.error('注册失败，请检查填写信息');
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
   function handleLogout() {
     clearSession();
     setSessionUser(undefined);
@@ -267,7 +291,7 @@ export default function App() {
         onCancel={() => setLoginOpen(false)}
         className="login-modal"
       >
-        <LoginPage onLogin={handleLogin} loading={loginLoading} />
+        <LoginPage onLogin={handleLogin} onRegister={handleRegister} loading={loginLoading} />
       </Modal>
     </div>
   );
@@ -489,11 +513,8 @@ function AuthenticatedContent({
   visibleModules: ModuleKey[];
   onSelect: (module: ModuleKey) => void;
 }) {
-  if (activeModule === 'assignment') {
-    return <AssignmentManagement />;
-  }
-  if (activeModule === 'work') {
-    return <WorkAnalysis />;
+  if (activeModule === 'teaching') {
+    return <TeachingManagement />;
   }
   if (activeModule === 'audio') {
     return <AudioAnalysis />;

@@ -41,6 +41,11 @@ public class CourseController {
         return courseService.options(principal);
     }
 
+    @GetMapping("/{courseId}/students")
+    public List<CourseStudentOption> students(@PathVariable String courseId, @AuthenticationPrincipal AppPrincipal principal) {
+        return courseService.students(courseId, principal);
+    }
+
     @PostMapping
     public ResponseEntity<CourseResponse> create(@Valid @RequestBody CreateCourseRequest request, @AuthenticationPrincipal AppPrincipal principal) {
         CourseResponse course = courseService.create(request, principal);

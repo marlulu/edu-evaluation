@@ -1,191 +1,202 @@
-import {
-  DeleteOutlined,
-  DownloadOutlined,
-  EditOutlined,
-  PlusOutlined,
-  SearchOutlined,
-  UploadOutlined,
-  UserAddOutlined
-} from '@ant-design/icons';
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from 'antd';
-import type { TableProps } from 'antd';
-import { useMemo, useState } from 'react';
+import { DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, SearchOutlined, UploadOutlined, UserAddOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import axios from 'axios';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const { Paragraph, Text, Title } = Typography;
-
-type Group = { id: string; name: string; color: string };
-type Student = { id: string; number: string; name: string; email?: string; groups: string[] };
-type StudentForm = { number: string; name: string; email?: string; groups?: string[] };
-
-const initialGroups: Group[] = [
-  { id: 'project', name: '项目 A 组', color: 'blue' },
-  { id: 'focus', name: '重点辅导', color: 'orange' },
-  { id: 'defense', name: '答辩组', color: 'purple' }
-];
-
-const initialStudents: Student[] = [
-  { id: 's-1', number: '20240001', name: '林悦', email: 'linyue@example.edu', groups: ['project', 'focus'] },
-  { id: 's-2', number: '20240002', name: '周晨', email: 'zhouchen@example.edu', groups: ['project'] },
-  { id: 's-3', number: '20240003', name: '陈思远', groups: ['defense'] },
-  { id: 's-4', number: '20240004', name: '王宁', groups: [] }
-];
+type Group = { id: string; name: string; studentCount: number };
+type Student = { id: string; studentNumber: string; studentName: string; email: string | null; groupNames: string[] };
+type StudentForm = { studentNumber: string; studentName: string; email?: string; groupIds?: string[] };
+type ImportRow = { rowNumber: number; studentNumber: string; studentName: string; email: string | null; valid: boolean; issue: string | null };
+type ImportPreview = { draftId: string; rows: ImportRow[]; validCount: number; invalidCount: number };
+type Credential = { studentNumber: string; studentName: string; initialPassword: string };
 
 export function StudentManagement() {
-  const [messageApi, contextHolder] = message.useMessage();
-  const [groups, setGroups] = useState(initialGroups);
-  const [students, setStudents] = useState(initialStudents);
-  const [activeGroup, setActiveGroup] = useState('all');
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [keyword, setKeyword] = useState('');
-  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  const [activeGroup, setActiveGroup] = useState<string>();
   const [studentModalOpen, setStudentModalOpen] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<Student | undefined>();
   const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<Group>();
+  const [editing, setEditing] = useState<Student>();
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importGroups, setImportGroups] = useState<string[]>([]);
+  const [importPreview, setImportPreview] = useState<ImportPreview>();
+  const [importing, setImporting] = useState(false);
+  const [messageApi, contextHolder] = message.useMessage();
   const [studentForm] = Form.useForm<StudentForm>();
   const [groupForm] = Form.useForm<{ name: string }>();
 
-  const visibleStudents = useMemo(
-    () =>
-      students.filter((student) => {
-        const matchesGroup = activeGroup === 'all' || student.groups.includes(activeGroup);
-        const term = keyword.trim().toLowerCase();
-        return matchesGroup && (!term || `${student.name}${student.number}${student.email ?? ''}`.toLowerCase().includes(term));
-      }),
-    [activeGroup, keyword, students]
-  );
+  const load = useCallback(async () => {
+    try {
+      const [studentResponse, groupResponse] = await Promise.all([
+        axios.get<Student[]>('/api/students'),
+        axios.get<Group[]>('/api/students/groups')
+      ]);
+      setStudents(studentResponse.data);
+      setGroups(groupResponse.data);
+    } catch {
+      messageApi.error('学生数据加载失败');
+    }
+  }, [messageApi]);
 
-  function openStudentModal(student?: Student) {
-    setEditingStudent(student);
-    studentForm.setFieldsValue(student ? { number: student.number, name: student.name, email: student.email, groups: student.groups } : { number: '', name: '', groups: [] });
+  useEffect(() => { void load(); }, [load]);
+
+  const currentGroup = groups.find((group) => group.id === activeGroup);
+  const visibleStudents = useMemo(() => students.filter((student) => {
+    const term = keyword.trim().toLowerCase();
+    const matchesKeyword = !term || `${student.studentName}${student.studentNumber}${student.email ?? ''}`.toLowerCase().includes(term);
+    return matchesKeyword && (!currentGroup || student.groupNames.includes(currentGroup.name));
+  }), [currentGroup, keyword, students]);
+
+  function openStudent(student?: Student) {
+    setEditing(student);
+    const groupIds = student ? groups.filter((group) => student.groupNames.includes(group.name)).map((group) => group.id) : [];
+    studentForm.setFieldsValue(student
+      ? { studentNumber: student.studentNumber, studentName: student.studentName, email: student.email ?? undefined, groupIds }
+      : { studentNumber: '', studentName: '', groupIds: [] });
     setStudentModalOpen(true);
   }
 
-  function saveStudent() {
-    void studentForm.validateFields().then((values) => {
-      if (students.some((student) => student.number === values.number && student.id !== editingStudent?.id)) {
-        messageApi.error('学号已存在');
-        return;
-      }
-      const next: Student = {
-        id: editingStudent?.id ?? crypto.randomUUID(),
-        number: values.number,
-        name: values.name,
-        email: values.email,
-        groups: values.groups ?? []
-      };
-      setStudents((current) => editingStudent ? current.map((student) => student.id === next.id ? next : student) : [next, ...current]);
+  async function saveStudent() {
+    const values = await studentForm.validateFields();
+    try {
+      if (editing) await axios.put(`/api/students/${editing.id}`, values);
+      else await axios.post('/api/students', values);
       setStudentModalOpen(false);
-      messageApi.success(editingStudent ? '学生信息已更新' : '学生已新增');
-    });
-  }
-
-  function saveGroup() {
-    void groupForm.validateFields().then((values) => {
-      if (groups.some((group) => group.name === values.name)) {
-        messageApi.error('组别名称已存在');
-        return;
-      }
-      setGroups((current) => [...current, { id: crypto.randomUUID(), name: values.name, color: 'cyan' }]);
-      setGroupModalOpen(false);
-      messageApi.success('组别已创建');
-    });
-  }
-
-  function deleteGroup(group: Group) {
-    setGroups((current) => current.filter((item) => item.id !== group.id));
-    setStudents((current) => current.map((student) => ({ ...student, groups: student.groups.filter((id) => id !== group.id) })));
-    setActiveGroup('all');
-    messageApi.success(`已删除组别“${group.name}”`);
-  }
-
-  function downloadTemplate() {
-    const blob = new Blob(['\uFEFF学号,姓名,邮箱,备注\n20240001,张三,zhangsan@example.edu,'], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = '学生导入模板.csv';
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const columns: TableProps<Student>['columns'] = [
-    { title: '学号', dataIndex: 'number', width: 130 },
-    { title: '姓名', dataIndex: 'name', width: 120 },
-    { title: '邮箱', dataIndex: 'email', render: (value?: string) => value || <Text type="secondary">-</Text> },
-    {
-      title: '组别',
-      render: (_, student) => <Space size={[4, 4]} wrap>{student.groups.map((id) => {
-        const group = groups.find((item) => item.id === id);
-        return group ? <Tag color={group.color} key={id}>{group.name}</Tag> : null;
-      })}</Space>
-    },
-    {
-      title: '操作',
-      width: 120,
-      render: (_, student) => <Space size={0}>
-        <Button type="text" icon={<EditOutlined />} onClick={() => openStudentModal(student)} />
-        <Popconfirm title={`删除学生“${student.name}”？`} onConfirm={() => setStudents((current) => current.filter((item) => item.id !== student.id))}>
-          <Button type="text" danger icon={<DeleteOutlined />} />
-        </Popconfirm>
-      </Space>
+      await load();
+      messageApi.success('学生信息已保存');
+    } catch {
+      messageApi.error('学生信息保存失败');
     }
+  }
+
+  async function createGroup() {
+    const values = await groupForm.validateFields();
+    try {
+      if (editingGroup) await axios.put(`/api/students/groups/${editingGroup.id}`, values);
+      else await axios.post('/api/students/groups', values);
+      setGroupModalOpen(false);
+      setEditingGroup(undefined);
+      groupForm.resetFields();
+      await load();
+    } catch {
+      messageApi.error('组别创建失败');
+    }
+  }
+
+  function openGroup(group?: Group) {
+    setEditingGroup(group);
+    groupForm.setFieldsValue({ name: group?.name ?? '' });
+    setGroupModalOpen(true);
+  }
+
+  async function deleteGroup(group: Group) {
+    try {
+      await axios.delete(`/api/students/groups/${group.id}`);
+      if (activeGroup === group.id) setActiveGroup(undefined);
+      await load();
+      messageApi.success('组别已删除');
+    } catch {
+      messageApi.error('组别删除失败');
+    }
+  }
+
+  async function deleteStudent(student: Student) {
+    try {
+      await axios.delete(`/api/students/${student.id}`);
+      await load();
+      messageApi.success('学生已删除');
+    } catch {
+      messageApi.error('删除失败：当前账号可能没有删除权限');
+    }
+  }
+
+  async function previewImport(file: File) {
+    const data = new FormData();
+    data.append('file', file);
+    importGroups.forEach((groupId) => data.append('groupIds', groupId));
+    setImporting(true);
+    try {
+      const response = await axios.post<ImportPreview>('/api/students/import/preview', data);
+      setImportPreview(response.data);
+    } catch {
+      messageApi.error('导入预览失败，请使用规定的 Excel 模板');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function confirmImport() {
+    if (!importPreview) return;
+    setImporting(true);
+    try {
+      const response = await axios.post<{ importedCount: number; credentials: Credential[] }>(`/api/students/import/${importPreview.draftId}/confirm`);
+      const text = ['学号,姓名,初始密码', ...response.data.credentials.map((item) => `${item.studentNumber},${item.studentName},${item.initialPassword}`)].join('\n');
+      const url = URL.createObjectURL(new Blob([`\uFEFF${text}`], { type: 'text/csv;charset=utf-8' }));
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = '学生初始密码.csv'; anchor.click(); URL.revokeObjectURL(url);
+      setImportModalOpen(false); setImportPreview(undefined); await load();
+      messageApi.success(`已导入 ${response.data.importedCount} 名学生`);
+    } catch {
+      messageApi.error('确认导入失败，预览可能已失效');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function downloadTemplate() {
+    try {
+      const response = await axios.get('/api/students/import/template', { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = '学生导入模板.xlsx'; anchor.click(); URL.revokeObjectURL(url);
+    } catch {
+      messageApi.error('模板下载失败');
+    }
+  }
+
+  const columns: ColumnsType<Student> = [
+    { title: '学号', dataIndex: 'studentNumber', width: 150 },
+    { title: '姓名', dataIndex: 'studentName', width: 130 },
+    { title: '邮箱', dataIndex: 'email', render: (email) => email || <Text type="secondary">-</Text> },
+    { title: '组别', dataIndex: 'groupNames', render: (names: string[]) => <Space size={[4, 4]} wrap>{names.map((name) => <Tag key={name}>{name}</Tag>)}</Space> },
+    { title: '操作', width: 140, render: (_, student) => <Space size={0}><Button type="link" onClick={() => openStudent(student)}>编辑</Button><Popconfirm title="确认删除该学生？" onConfirm={() => void deleteStudent(student)}><Button type="link" danger icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space> }
   ];
 
   return (
     <div className="student-management">
       {contextHolder}
       <section className="page-heading student-management-heading">
-        <div>
-          <Tag color="blue">教学管理</Tag>
-          <Title level={2}>学生管理</Title>
-          <Paragraph type="secondary">按自定义组别维护学生名单，支持手动新增与导入前分组。</Paragraph>
-        </div>
-        <Space wrap>
-          <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>下载模板</Button>
-          <Button icon={<UploadOutlined />} onClick={() => messageApi.info('Excel 导入预览将在下一步接入')}>导入 Excel</Button>
-          <Button type="primary" icon={<UserAddOutlined />} onClick={() => openStudentModal()}>新增学生</Button>
-        </Space>
+        <div><Tag color="blue">教学管理</Tag><Title level={2}>学生管理</Title><Paragraph type="secondary">共享学生库和自定义组别可直接用于课程成员选择。</Paragraph></div>
+        <Space><Button icon={<DownloadOutlined />} onClick={() => void downloadTemplate()}>下载模板</Button><Button icon={<UploadOutlined />} onClick={() => { setImportPreview(undefined); setImportModalOpen(true); }}>导入 Excel</Button><Button icon={<PlusOutlined />} onClick={() => setGroupModalOpen(true)}>新建组别</Button><Button type="primary" icon={<UserAddOutlined />} onClick={() => openStudent()}>新增学生</Button></Space>
       </section>
       <div className="student-management-layout">
         <aside className="student-group-rail">
-          <Button type="primary" block icon={<PlusOutlined />} onClick={() => { groupForm.resetFields(); setGroupModalOpen(true); }}>新建组别</Button>
-          <button type="button" className={activeGroup === 'all' ? 'group-link active' : 'group-link'} onClick={() => setActiveGroup('all')}>
-            <span>全部学生</span><Text type="secondary">{students.length}</Text>
-          </button>
-          <Text type="secondary" className="group-rail-label">自定义组别</Text>
-          {groups.map((group) => (
-            <div key={group.id} className={activeGroup === group.id ? 'group-link active' : 'group-link'}>
-              <button type="button" onClick={() => setActiveGroup(group.id)}><Tag color={group.color} />{group.name}</button>
-              <Popconfirm title={`删除组别“${group.name}”？学生资料不会被删除。`} onConfirm={() => deleteGroup(group)}>
-                <Button type="text" danger size="small" icon={<DeleteOutlined />} />
-              </Popconfirm>
-            </div>
-          ))}
+          <Button block type={!activeGroup ? 'primary' : 'text'} onClick={() => setActiveGroup(undefined)}>全部学生 <Text type="secondary">{students.length}</Text></Button>
+          {groups.map((group) => <div className="student-group-item" key={group.id}>
+            <Button block type={activeGroup === group.id ? 'primary' : 'text'} onClick={() => setActiveGroup(group.id)}>{group.name} <Text type="secondary">{group.studentCount}</Text></Button>
+            <Button type="text" size="small" icon={<EditOutlined />} aria-label={`编辑 ${group.name}`} onClick={() => openGroup(group)} />
+            <Popconfirm title={`确定删除组别“${group.name}”？`} onConfirm={() => void deleteGroup(group)}>
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除 ${group.name}`} />
+            </Popconfirm>
+          </div>)}
         </aside>
         <Card className="student-management-card">
-          <div className="student-management-toolbar">
-            <div><Title level={4}>{activeGroup === 'all' ? '全部学生' : groups.find((group) => group.id === activeGroup)?.name}</Title><Text type="secondary">共 {visibleStudents.length} 名学生</Text></div>
-            <Input className="student-search" prefix={<SearchOutlined />} placeholder="搜索姓名、学号或邮箱" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-          </div>
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={visibleStudents}
-            scroll={{ x: 700 }}
-            pagination={{ pageSize: 8, showSizeChanger: false }}
-            rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }}
-          />
+          <div className="student-management-toolbar"><Title level={4}>{currentGroup?.name ?? '全部学生'}</Title><Input className="student-search" prefix={<SearchOutlined />} placeholder="搜索姓名、学号或邮箱" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></div>
+          <Table rowKey="id" columns={columns} dataSource={visibleStudents} scroll={{ x: 700 }} pagination={{ pageSize: 8, showSizeChanger: false }} />
         </Card>
       </div>
-      <Modal title={editingStudent ? '编辑学生' : '新增学生'} open={studentModalOpen} onCancel={() => setStudentModalOpen(false)} onOk={saveStudent}>
-        <Form form={studentForm} layout="vertical">
-          <Form.Item name="number" label="学号" rules={[{ required: true, message: '请输入学号' }]}><Input /></Form.Item>
-          <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}><Input /></Form.Item>
-          <Form.Item name="email" label="邮箱"><Input /></Form.Item>
-          <Form.Item name="groups" label="自定义组别"><Select mode="multiple" options={groups.map((group) => ({ value: group.id, label: group.name }))} /></Form.Item>
-        </Form>
+      <Modal title={editing ? '编辑学生' : '新增学生'} open={studentModalOpen} onCancel={() => setStudentModalOpen(false)} onOk={() => void saveStudent()}>
+        <Form form={studentForm} layout="vertical"><Form.Item name="studentNumber" label="学号" rules={[{ required: true }]}><Input disabled={Boolean(editing)} /></Form.Item><Form.Item name="studentName" label="姓名" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="email" label="邮箱"><Input /></Form.Item><Form.Item name="groupIds" label="学生组别"><Select mode="multiple" options={groups.map((group) => ({ value: group.id, label: group.name }))} /></Form.Item></Form>
       </Modal>
-      <Modal title="新建组别" open={groupModalOpen} onCancel={() => setGroupModalOpen(false)} onOk={saveGroup}>
-        <Form form={groupForm} layout="vertical"><Form.Item name="name" label="组别名称" rules={[{ required: true, message: '请输入组别名称' }]}><Input /></Form.Item></Form>
+      <Modal title={editingGroup ? '编辑组别' : '新建组别'} open={groupModalOpen} onCancel={() => { setGroupModalOpen(false); setEditingGroup(undefined); }} onOk={() => void createGroup()}><Form form={groupForm} layout="vertical"><Form.Item name="name" label="组别名称" rules={[{ required: true }]}><Input /></Form.Item></Form></Modal>
+      <Modal title="Excel 批量导入" open={importModalOpen} confirmLoading={importing} onCancel={() => setImportModalOpen(false)} onOk={() => void confirmImport()} okButtonProps={{ disabled: !importPreview || importPreview.validCount === 0 }} okText="确认导入">
+        <Space direction="vertical" className="content-stack">
+          <Select mode="multiple" allowClear placeholder="导入后归入的学生组别（可选）" value={importGroups} onChange={setImportGroups} options={groups.map((group) => ({ value: group.id, label: group.name }))} />
+          <Upload accept=".xlsx" maxCount={1} beforeUpload={(file) => { void previewImport(file); return false; }} showUploadList={false}><Button loading={importing} icon={<UploadOutlined />}>选择 Excel 文件</Button></Upload>
+          {importPreview && <><Text>有效 {importPreview.validCount} 行，跳过 {importPreview.invalidCount} 行。</Text><Table size="small" rowKey="rowNumber" pagination={{ pageSize: 5 }} dataSource={importPreview.rows} columns={[{ title: '行', dataIndex: 'rowNumber' }, { title: '学号', dataIndex: 'studentNumber' }, { title: '姓名', dataIndex: 'studentName' }, { title: '结果', render: (_, row: ImportRow) => row.valid ? <Tag color="green">可导入</Tag> : <Tag color="red">{row.issue}</Tag> }]} /></>}
+        </Space>
       </Modal>
     </div>
   );

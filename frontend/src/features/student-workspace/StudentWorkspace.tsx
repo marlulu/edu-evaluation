@@ -1,111 +1,93 @@
-import {
-  CalendarOutlined,
-  CheckCircleFilled,
-  ClockCircleOutlined,
-  FileTextOutlined,
-  UploadOutlined
-} from '@ant-design/icons';
-import { Button, Card, Space, Tag, Tooltip, Typography } from 'antd';
-import type { ReactNode } from 'react';
+import { CalendarOutlined, CheckCircleFilled, ClockCircleOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { Button, Card, Empty, Space, Tag, Typography, Upload, message } from 'antd';
+import axios from 'axios';
+import { useCallback, useEffect, useState } from 'react';
 
 const { Paragraph, Text, Title } = Typography;
 
-type StudentWorkspaceProps = {
-  studentName: string;
-};
-
-type TaskPreview = {
+type StudentWorkspaceProps = { studentName: string };
+type Task = {
   id: string;
+  courseId: string;
   title: string;
   description: string;
-  deadline: string;
-  status: 'ready' | 'submitted' | 'closed';
+  deadline: string | null;
+  submitted: boolean;
+  fileName: string | null;
+  submittedAt: string | null;
+  attachments: Array<{ fileName: string; downloadUrl: string }>;
 };
 
-const taskPreviews: TaskPreview[] = [
-  {
-    id: 'ready',
-    title: '课程作业任务',
-    description: '任务内容将在关联任务服务接入后显示。',
-    deadline: '截止时间待加载',
-    status: 'ready'
-  },
-  {
-    id: 'submitted',
-    title: '已提交任务',
-    description: '当前提交状态将在任务服务接入后同步。',
-    deadline: '提交时间待加载',
-    status: 'submitted'
-  },
-  {
-    id: 'closed',
-    title: '已截止任务',
-    description: '已截止任务仅保留提交状态，不能替换作品。',
-    deadline: '截止时间待加载',
-    status: 'closed'
-  }
-];
-
-const statusMeta: Record<TaskPreview['status'], { label: string; color: string; icon: ReactNode }> = {
-  ready: { label: '待提交', color: 'blue', icon: <ClockCircleOutlined /> },
-  submitted: { label: '已提交', color: 'green', icon: <CheckCircleFilled /> },
-  closed: { label: '已截止', color: 'default', icon: <ClockCircleOutlined /> }
-};
+function taskIsClosed(task: Task) {
+  return task.deadline !== null && new Date(task.deadline).getTime() <= Date.now();
+}
 
 export function StudentWorkspace({ studentName }: StudentWorkspaceProps) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [messageApi, contextHolder] = message.useMessage();
+
+  const loadTasks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get<Task[]>('/api/student/tasks');
+      setTasks(response.data);
+    } catch {
+      messageApi.error('任务加载失败，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  }, [messageApi]);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
+
+  async function submit(task: Task, file: File) {
+    const body = new FormData();
+    body.append('file', file);
+    try {
+      await axios.post(`/api/student/tasks/${task.id}/submission`, body);
+      messageApi.success(task.submitted ? '已更新为最新提交作品' : '作品已提交');
+      await loadTasks();
+    } catch {
+      messageApi.error('提交失败，任务可能已截止');
+    }
+  }
+
   return (
     <div className="student-workspace">
+      {contextHolder}
       <section className="page-heading student-heading">
         <div>
           <Tag color="blue">学生工作区</Tag>
           <Title level={2}>我的任务</Title>
-          <Paragraph type="secondary">
-            {studentName}，这里将展示分配给你的课程作业。
-          </Paragraph>
+          <Paragraph type="secondary">{studentName}，请在截止前提交或更新你的作品。</Paragraph>
         </div>
-        <div className="student-summary">
-          <Text type="secondary">待提交任务</Text>
-          <strong>1</strong>
-        </div>
+        <div className="student-summary"><Text type="secondary">待提交任务</Text><strong>{tasks.filter((task) => !task.submitted && !taskIsClosed(task)).length}</strong></div>
       </section>
-
-      <div className="student-filter-row" aria-label="任务状态">
-        <Tag color="blue">全部任务</Tag>
-        <Tag>待提交</Tag>
-        <Tag>已提交</Tag>
-        <Tag>已截止</Tag>
-      </div>
-
       <section className="student-task-grid">
-        {taskPreviews.map((task) => {
-          const status = statusMeta[task.status];
+        {!loading && tasks.length === 0 && <Empty description="暂无可提交任务" />}
+        {tasks.map((task) => {
+          const closed = taskIsClosed(task);
+          const status = closed ? { label: '已截止', color: 'default', icon: <ClockCircleOutlined /> }
+            : task.submitted ? { label: '已提交', color: 'green', icon: <CheckCircleFilled /> }
+              : { label: '待提交', color: 'blue', icon: <ClockCircleOutlined /> };
           return (
-            <Card key={task.id} className="student-task-card">
+            <Card key={task.id} className="student-task-card" loading={loading}>
               <Space direction="vertical" size={16} className="content-stack">
-                <div className="task-card-topline">
-                  <Tag color={status.color} icon={status.icon}>
-                    {status.label}
-                  </Tag>
-                  <FileTextOutlined className="task-file-icon" />
-                </div>
-                <div>
-                  <Title level={4}>{task.title}</Title>
-                  <Paragraph type="secondary">{task.description}</Paragraph>
-                </div>
-                <div className="task-deadline">
-                  <CalendarOutlined />
-                  <Text type="secondary">{task.deadline}</Text>
-                </div>
-                <Tooltip title="待任务服务接入后启用">
-                  <Button
-                    type="primary"
-                    block
-                    disabled
-                    icon={<UploadOutlined />}
-                  >
-                    提交作品
+                <Tag color={status.color} icon={status.icon}>{status.label}</Tag>
+                <div><Title level={4}>{task.title}</Title><Paragraph type="secondary">{task.description}</Paragraph></div>
+                <div className="task-deadline"><CalendarOutlined /><Text type="secondary">{task.deadline ? `截止：${new Date(task.deadline).toLocaleString()}` : '不设截止时间'}</Text></div>
+                {task.attachments.map((attachment) => (
+                  <Button key={attachment.downloadUrl} type="link" icon={<DownloadOutlined />} href={attachment.downloadUrl}>
+                    {attachment.fileName}
                   </Button>
-                </Tooltip>
+                ))}
+                {task.submitted && <Text type="secondary">当前作品：{task.fileName}</Text>}
+                <Upload beforeUpload={(file) => { void submit(task, file); return false; }} showUploadList={false} disabled={closed}>
+                  <Button type="primary" block icon={<UploadOutlined />} disabled={closed}>{task.submitted ? '重新提交作品' : '提交作品'}</Button>
+                </Upload>
               </Space>
             </Card>
           );

@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -42,7 +43,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     null,
                     List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
             );
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            SecurityContextHolder.setContext(context);
         } catch (JwtException | IllegalArgumentException | java.util.NoSuchElementException exception) {
             SecurityContextHolder.clearContext();
         }

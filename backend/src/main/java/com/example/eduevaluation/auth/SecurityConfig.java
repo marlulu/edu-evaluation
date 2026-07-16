@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -25,13 +26,15 @@ public class SecurityConfig {
             ObjectMapper objectMapper
     ) throws Exception {
         return http
-                .csrf(csrf -> csrf.disable())
+                .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> writeError(response, objectMapper, 401, "Unauthorized", "请先登录"))
                         .accessDeniedHandler((request, response, exception) -> writeError(response, objectMapper, 403, "Forbidden", "没有权限执行此操作")))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/login", "/api/auth/register/**", "/api/health", "/actuator/health").permitAll()
+                        .requestMatchers("/error", "/api/auth/login", "/api/auth/register/**", "/api/health", "/actuator/health").permitAll()
+                        .requestMatchers("/api/classes/**", "/api/assignments/**", "/api/work/**").denyAll()
+                        .requestMatchers("/api/system/**", "/api/auth/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

@@ -27,4 +27,8 @@ class CourseMemberEntity {
         this.courseId = courseId;
         this.studentId = studentId;
     }
+
+    String getStudentId() {
+        return studentId;
+    }
 }

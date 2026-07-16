@@ -20,6 +20,18 @@ export async function login(username: string, password: string): Promise<AuthSes
   return response.data;
 }
 
+export async function registerTeacher(input: { username: string; password: string; displayName: string }): Promise<AuthSession> {
+  const response = await axios.post<AuthSession>('/api/auth/register/teacher', input);
+  return response.data;
+}
+
+export async function registerStudent(input: {
+  username: string; password: string; studentNumber: string; initialPassword: string;
+}): Promise<AuthSession> {
+  const response = await axios.post<AuthSession>('/api/auth/register/student', input);
+  return response.data;
+}
+
 export async function fetchCurrentSession(): Promise<AuthSession> {
   const response = await axios.get<AuthSession>('/api/auth/me');
   return response.data;
