@@ -19,6 +19,21 @@ export type TaskDetail = {
   submissionCount: number;
 };
 
+export type TaskAttachment = {
+  fileName: string;
+  downloadUrl: string;
+  deleteUrl: string;
+};
+
+export type TaskUpdateResponse = {
+  id: string;
+  courseId: string;
+  title: string;
+  description: string;
+  deadline: string | null;
+  status: 'DRAFT' | 'ACTIVE' | 'CLOSED';
+};
+
 export type Review = {
   score: number | null;
   feedback: string | null;
@@ -58,6 +73,24 @@ export async function fetchTaskDetail(id: string) {
 
 export async function fetchTaskSubmissions(id: string) {
   return (await axios.get<TaskSubmission[]>(`/api/tasks/${id}/submissions`)).data;
+}
+
+export async function fetchTaskAttachments(id: string) {
+  return (await axios.get<TaskAttachment[]>(`/api/tasks/${id}/attachments`)).data;
+}
+
+export async function updateTask(id: string, values: Pick<TaskDetail, 'title' | 'description' | 'deadline' | 'status'>) {
+  return (await axios.put<TaskUpdateResponse>(`/api/tasks/${id}`, values)).data;
+}
+
+export async function uploadTaskAttachment(id: string, file: File) {
+  const body = new FormData();
+  body.append('file', file);
+  return (await axios.post<TaskAttachment>(`/api/tasks/${id}/attachments`, body)).data;
+}
+
+export async function deleteTaskAttachment(url: string) {
+  await axios.delete(url);
 }
 
 export async function saveSubmissionRule(id: string, rule: SubmissionRuleInput) {

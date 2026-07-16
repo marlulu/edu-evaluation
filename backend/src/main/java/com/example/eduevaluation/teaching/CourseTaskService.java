@@ -59,7 +59,7 @@ public class CourseTaskService {
         permissions.require(principal, ModulePermissionService.TASK, ModuleAction.CREATE);
         requireStaff(courseId, principal);
         CourseTaskEntity task = tasks.save(new CourseTaskEntity(UUID.randomUUID().toString(), courseId,
-                request.title().trim(), request.description().trim(), request.deadline()));
+                requireTitle(request.title()), normalizeDescription(request.description()), request.deadline()));
         return response(task);
     }
 
@@ -68,7 +68,9 @@ public class CourseTaskService {
         permissions.require(principal, ModulePermissionService.TASK, ModuleAction.EDIT);
         CourseTaskEntity task = requireTask(taskId);
         requireStaff(task.getCourseId(), principal);
-        task.update(request.title().trim(), request.description().trim(), request.deadline(), request.status());
+        task.update(requireTitle(request.title()),
+                request.description() == null ? task.getDescription() : normalizeDescription(request.description()),
+                request.deadline(), request.status());
         return response(tasks.save(task));
     }
 
@@ -285,6 +287,17 @@ public class CourseTaskService {
     private String extension(String fileName) {
         int index = fileName.lastIndexOf('.');
         return index < 0 ? "" : fileName.substring(index).toLowerCase(Locale.ROOT);
+    }
+
+    private String requireTitle(String title) {
+        if (title == null || title.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "作业名称不能为空");
+        }
+        return title.trim();
+    }
+
+    private String normalizeDescription(String description) {
+        return description == null ? "" : description.trim();
     }
 
     private List<String> parseExtensions(String raw) {

@@ -1,18 +1,16 @@
-import { ArrowLeftOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, Card, DatePicker, Empty, Form, Input, Modal, Popconfirm, Select, Tag, Typography, Upload, message } from 'antd';
+import { ArrowLeftOutlined, DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Card, DatePicker, Empty, Form, Input, Modal, Popconfirm, Select, Tooltip, Typography, message } from 'antd';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import CourseManagement from './CourseManagement';
 import { TaskWorkspace } from './TaskWorkspace';
 
-const { Paragraph, Text, Title } = Typography;
+const { Text, Title } = Typography;
 type CourseDetail = { id: string; name: string };
 type TaskStatus = 'DRAFT' | 'ACTIVE' | 'CLOSED';
 type Task = { id: string; title: string; description: string; deadline: string | null; status: TaskStatus };
-type TaskAttachment = { fileName: string; downloadUrl: string; deleteUrl: string };
-type TaskWithAttachments = Task & { attachments?: TaskAttachment[] };
-type TaskForm = { title: string; description: string; deadline?: dayjs.Dayjs; status: TaskStatus };
+type TaskForm = { title: string; deadline?: dayjs.Dayjs; status: TaskStatus };
 const statusMeta: Record<TaskStatus, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
   ACTIVE: { label: '进行中', color: 'green' },
@@ -30,12 +28,11 @@ export default function TeachingManagement() {
 }
 
 function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => void }) {
-  const [tasks, setTasks] = useState<TaskWithAttachments[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [keyword, setKeyword] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task>();
   const [viewingTaskId, setViewingTaskId] = useState<string>();
-  const [attachmentFiles, setAttachmentFiles] = useState<Array<{ uid: string; file: File }>>([]);
   const [saving, setSaving] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<TaskForm>();
@@ -55,17 +52,14 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
 
   function openTaskModal(task?: Task) {
     setEditingTask(task);
-    setAttachmentFiles([]);
     form.setFieldsValue(task
       ? {
           title: task.title,
-          description: task.description,
           deadline: task.deadline ? dayjs(task.deadline) : undefined,
           status: task.status
         }
       : {
           title: '',
-          description: '',
           deadline: undefined,
           status: 'DRAFT'
         });
@@ -78,22 +72,17 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
     try {
       const payload = {
         title: values.title,
-        description: values.description,
         deadline: values.deadline?.toISOString() ?? null,
         status: 'DRAFT'
       };
-      const taskId = editingTask
-        ? (await axios.put<Task>(`/api/tasks/${editingTask.id}`, { ...payload, status: values.status })).data.id
-        : (await axios.post<Task>(`/api/courses/${course.id}/tasks`, payload)).data.id;
-      for (const attachment of attachmentFiles) {
-        const body = new FormData();
-        body.append('file', attachment.file);
-        await axios.post(`/api/tasks/${taskId}/attachments`, body);
+      if (editingTask) {
+        await axios.put<Task>(`/api/tasks/${editingTask.id}`, { ...payload, status: values.status });
+      } else {
+        await axios.post<Task>(`/api/courses/${course.id}/tasks`, payload);
       }
       setModalOpen(false);
       form.resetFields();
       setEditingTask(undefined);
-      setAttachmentFiles([]);
       await loadTasks();
     } catch {
       messageApi.error('作业创建失败');
@@ -102,17 +91,7 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
     }
   }
 
-  async function deleteAttachment(task: TaskWithAttachments, attachment: TaskAttachment) {
-    try {
-      await axios.delete(attachment.deleteUrl);
-      messageApi.success('作业文档已删除');
-      await loadTasks();
-    } catch {
-      messageApi.error('作业文档删除失败');
-    }
-  }
-
-  async function deleteTask(task: TaskWithAttachments) {
+  async function deleteTask(task: Task) {
     try {
       await axios.delete(`/api/tasks/${task.id}`);
       messageApi.success('作业已删除');
@@ -144,24 +123,13 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
           {visible.map((task) => (
             <article className="course-task-item" key={task.id}>
               <div className="course-task-main">
-                <div className="course-task-title"><Tag color="blue">作业</Tag><Title level={4}>{task.title}</Title></div>
-                <Paragraph type="secondary">{task.description}</Paragraph>
+                <Button className="course-task-title-link" type="link" onClick={() => setViewingTaskId(task.id)}>{task.title}</Button>
                 <Text type="secondary">截止时间：{task.deadline ? new Date(task.deadline).toLocaleString() : '不设截止时间'}</Text>
-                {task.attachments?.length ? <div className="course-task-attachments">
-                  {task.attachments.map((attachment) => (
-                    <span className="course-task-attachment" key={attachment.downloadUrl}>
-                      <Button type="link" size="small" icon={<DownloadOutlined />} href={attachment.downloadUrl}>{attachment.fileName}</Button>
-                      <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除 ${attachment.fileName}`} onClick={() => void deleteAttachment(task, attachment)} />
-                    </span>
-                  ))}
-                </div> : null}
               </div>
               <div className="course-task-actions">
-                <Tag color={statusMeta[task.status].color}>{statusMeta[task.status].label}</Tag>
-                <Button type="link" size="small" onClick={() => setViewingTaskId(task.id)}>作业详情</Button>
-                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openTaskModal(task)}>编辑</Button>
+                <Tooltip title="编辑作业名称、截止时间和状态"><Button type="text" size="small" icon={<EditOutlined />} aria-label="编辑作业" onClick={() => openTaskModal(task)} /></Tooltip>
                 <Popconfirm title="确定删除该作业？" onConfirm={() => void deleteTask(task)}>
-                  <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label="删除作业" />
                 </Popconfirm>
               </div>
             </article>
@@ -181,36 +149,7 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
       >
         <Form form={form} layout="vertical" initialValues={{ status: 'DRAFT' }}>
           <Form.Item name="title" label="作业名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="description" label="作业说明" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item>
           <Form.Item name="deadline" label="截止时间"><DatePicker showTime className="full-width" /></Form.Item>
-          <Form.Item label="作业文档">
-            <Upload
-              accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt"
-              multiple
-              showUploadList={false}
-              beforeUpload={(file) => {
-                setAttachmentFiles((files) => [...files, { uid: file.uid, file }]);
-                return false;
-              }}
-              onRemove={(file) => setAttachmentFiles((files) => files.filter((attachment) => attachment.uid !== file.uid))}
-            >
-              <Button icon={<UploadOutlined />}>选择文档</Button>
-            </Upload>
-            {attachmentFiles.length ? <div className="task-modal-attachments">
-              {attachmentFiles.map((attachment) => (
-                <div className="task-modal-attachment" key={attachment.uid}>
-                  <span>{attachment.file.name}</span>
-                  <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`移除 ${attachment.file.name}`} onClick={() => setAttachmentFiles((files) => files.filter((item) => item.uid !== attachment.uid))} />
-                </div>
-              ))}
-            </div> : null}
-            {editingTask && (editingTask as TaskWithAttachments).attachments?.map((attachment) => (
-              <div className="task-modal-attachment task-modal-uploaded-attachment" key={attachment.downloadUrl}>
-                <Button type="link" size="small" icon={<DownloadOutlined />} href={attachment.downloadUrl}>{attachment.fileName}</Button>
-                <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => void deleteAttachment(editingTask as TaskWithAttachments, attachment)} />
-              </div>
-            ))}
-          </Form.Item>
           <Form.Item name="status" label="状态"><Select options={Object.entries(statusMeta).map(([value, item]) => ({ value, label: item.label }))} /></Form.Item>
         </Form>
       </Modal>

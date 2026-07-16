@@ -1,5 +1,7 @@
 import {
   ArrowLeftOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
   RobotOutlined,
   SaveOutlined,
   UploadOutlined
@@ -30,17 +32,22 @@ import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createReviewDrafts,
+  deleteTaskAttachment,
+  fetchTaskAttachments,
   fetchTaskDetail,
   fetchTaskSubmissions,
   importSubmissionRule,
   saveReview,
   saveSubmissionRule,
+  updateTask,
+  uploadTaskAttachment,
   type SubmissionRule,
+  type TaskAttachment,
   type TaskDetail,
   type TaskSubmission
 } from './taskWorkspaceApi';
 
-const { Paragraph, Text, Title } = Typography;
+const { Text, Title } = Typography;
 const extensionOptions = ['.pdf', '.docx', '.txt', '.md', '.zip', '.pptx', '.xlsx', '.jpg', '.png', '.mp3', '.mp4'];
 
 type RuleForm = {
@@ -52,6 +59,10 @@ type RuleForm = {
 type ReviewForm = {
   score: number | null;
   feedback: string;
+};
+
+type ContentForm = {
+  description: string;
 };
 
 type TaskWorkspaceProps = {
@@ -78,28 +89,37 @@ function toRuleForm(rule: SubmissionRule): RuleForm {
 export function TaskWorkspace({ taskId, onBack }: TaskWorkspaceProps) {
   const [detail, setDetail] = useState<TaskDetail>();
   const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingRule, setSavingRule] = useState(false);
+  const [savingContent, setSavingContent] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingSubmission, setEditingSubmission] = useState<TaskSubmission>();
   const [ruleForm] = Form.useForm<RuleForm>();
+  const [contentForm] = Form.useForm<ContentForm>();
   const [reviewForm] = Form.useForm<ReviewForm>();
   const [messageApi, contextHolder] = message.useMessage();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextDetail, nextSubmissions] = await Promise.all([fetchTaskDetail(taskId), fetchTaskSubmissions(taskId)]);
+      const [nextDetail, nextSubmissions, nextAttachments] = await Promise.all([
+        fetchTaskDetail(taskId),
+        fetchTaskSubmissions(taskId),
+        fetchTaskAttachments(taskId)
+      ]);
       setDetail(nextDetail);
       setSubmissions(nextSubmissions);
+      setAttachments(nextAttachments);
       ruleForm.setFieldsValue(toRuleForm(nextDetail.rule));
+      contentForm.setFieldsValue({ description: nextDetail.description });
     } catch (error) {
       messageApi.error(readableError(error, '作业详情加载失败'));
     } finally {
       setLoading(false);
     }
-  }, [messageApi, ruleForm, taskId]);
+  }, [contentForm, messageApi, ruleForm, taskId]);
 
   useEffect(() => {
     void load();
@@ -123,6 +143,42 @@ export function TaskWorkspace({ taskId, onBack }: TaskWorkspaceProps) {
       messageApi.error(readableError(error, '提交规则保存失败'));
     } finally {
       setSavingRule(false);
+    }
+  }
+
+  async function saveContent() {
+    if (!detail) return;
+    const values = await contentForm.validateFields();
+    setSavingContent(true);
+    try {
+      const updated = await updateTask(taskId, { ...detail, description: values.description });
+      setDetail({ ...detail, ...updated });
+      messageApi.success('作业说明已保存');
+    } catch (error) {
+      messageApi.error(readableError(error, '作业说明保存失败'));
+    } finally {
+      setSavingContent(false);
+    }
+  }
+
+  async function addAttachment(file: File) {
+    try {
+      await uploadTaskAttachment(taskId, file);
+      await load();
+      messageApi.success('作业附件已上传');
+    } catch (error) {
+      messageApi.error(readableError(error, '作业附件上传失败'));
+    }
+    return false;
+  }
+
+  async function removeAttachment(attachment: TaskAttachment) {
+    try {
+      await deleteTaskAttachment(attachment.deleteUrl);
+      await load();
+      messageApi.success('作业附件已删除');
+    } catch (error) {
+      messageApi.error(readableError(error, '作业附件删除失败'));
     }
   }
 
@@ -244,7 +300,26 @@ export function TaskWorkspace({ taskId, onBack }: TaskWorkspaceProps) {
                       <Descriptions.Item label="截止时间">{detail.deadline ? new Date(detail.deadline).toLocaleString() : '未设置'}</Descriptions.Item>
                       <Descriptions.Item label="已提交作品">{detail.submissionCount} 份</Descriptions.Item>
                     </Descriptions>
-                    <Paragraph className="task-description">{detail.description}</Paragraph>
+                    <Form form={contentForm} layout="vertical" className="task-content-form">
+                      <Form.Item name="description" label="作业说明">
+                        <Input.TextArea rows={6} placeholder="填写作业说明、要求和补充信息。" />
+                      </Form.Item>
+                      <Button type="primary" loading={savingContent} onClick={() => void saveContent()}>保存作业说明</Button>
+                    </Form>
+                    <section className="task-attachment-section">
+                      <div className="task-attachment-heading">
+                        <Title level={5}>作业附件</Title>
+                        <Upload multiple showUploadList={false} beforeUpload={addAttachment}>
+                          <Button icon={<UploadOutlined />}>上传附件</Button>
+                        </Upload>
+                      </div>
+                      {attachments.length ? attachments.map((attachment) => (
+                        <div className="task-attachment-row" key={attachment.downloadUrl}>
+                          <Button type="link" icon={<DownloadOutlined />} href={attachment.downloadUrl}>{attachment.fileName}</Button>
+                          <Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除 ${attachment.fileName}`} onClick={() => void removeAttachment(attachment)} />
+                        </div>
+                      )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无作业附件" />}
+                    </section>
                   </>}
                 </Card>
                 <Card title="学生提交规则" className="task-rule-card">
