@@ -25,9 +25,10 @@ class CourseTaskServiceTest {
     private final CourseMemberRepository members = mock(CourseMemberRepository.class);
     private final CourseTaskRepository tasks = mock(CourseTaskRepository.class);
     private final TaskSubmissionRepository submissions = mock(TaskSubmissionRepository.class);
+    private final TaskSubmissionRuleRepository rules = mock(TaskSubmissionRuleRepository.class);
     private final ModulePermissionService permissions = mock(ModulePermissionService.class);
     private final CourseTaskService service = new CourseTaskService(
-            courses, staff, members, tasks, submissions, permissions,
+            courses, staff, members, tasks, submissions, rules, permissions,
             Path.of("target", "test-uploads").toString()
     );
     private final AppPrincipal student = new AppPrincipal("user-1", "student", UserRole.STUDENT, "student-1");
@@ -59,6 +60,39 @@ class CourseTaskServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(exception -> ((ResponseStatusException) exception).getStatusCode().value())
                 .isEqualTo(403);
+    }
+
+    @Test
+    void rejectsSubmissionThatExceedsConfiguredMaximumSize() {
+        CourseTaskEntity task = task("task-1", "course-1", LocalDateTime.now().plusDays(1));
+        TaskSubmissionRuleEntity rule = new TaskSubmissionRuleEntity("task-1");
+        rule.update(".pdf", 1, "仅限 PDF", null);
+        when(tasks.findById("task-1")).thenReturn(Optional.of(task));
+        when(members.existsByCourseIdAndStudentId("course-1", "student-1")).thenReturn(true);
+        when(rules.findById("task-1")).thenReturn(Optional.of(rule));
+
+        assertThatThrownBy(() -> service.submit("task-1",
+                new MockMultipartFile("file", "work.pdf", "application/pdf", new byte[] {1, 2}), student))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(exception -> ((ResponseStatusException) exception).getStatusCode().value())
+                .isEqualTo(400);
+    }
+
+    @Test
+    void rejectsSubmissionWithDisallowedExtension() {
+        CourseTaskEntity task = task("task-1", "course-1", LocalDateTime.now().plusDays(1));
+        TaskSubmissionRuleEntity rule = new TaskSubmissionRuleEntity("task-1");
+        rule.update(".pdf", 1024, "仅限 PDF", null);
+        when(tasks.findById("task-1")).thenReturn(Optional.of(task));
+        when(members.existsByCourseIdAndStudentId("course-1", "student-1")).thenReturn(true);
+        when(rules.findById("task-1")).thenReturn(Optional.of(rule));
+
+        assertThatThrownBy(() -> service.submit("task-1",
+                new MockMultipartFile("file", "work.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        new byte[] {1}), student))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(exception -> ((ResponseStatusException) exception).getStatusCode().value())
+                .isEqualTo(400);
     }
 
     @Test

@@ -16,6 +16,11 @@ type Task = {
   fileName: string | null;
   submittedAt: string | null;
   attachments: Array<{ fileName: string; downloadUrl: string }>;
+  submissionRule: {
+    allowedExtensions: string[];
+    maxFileSizeBytes: number;
+    ruleText: string | null;
+  };
 };
 
 function taskIsClosed(task: Task) {
@@ -44,14 +49,28 @@ export function StudentWorkspace({ studentName }: StudentWorkspaceProps) {
   }, [loadTasks]);
 
   async function submit(task: Task, file: File) {
+    const extension = file.name.includes('.') ? `.${file.name.split('.').pop()?.toLowerCase() ?? ''}` : '';
+    if (task.submissionRule.allowedExtensions.length && !task.submissionRule.allowedExtensions.includes(extension)) {
+      messageApi.error(`文件类型不符合要求：仅支持 ${task.submissionRule.allowedExtensions.join('、')}`);
+      return;
+    }
+    if (file.size > task.submissionRule.maxFileSizeBytes) {
+      messageApi.error(`文件超过最大限制（${Math.ceil(task.submissionRule.maxFileSizeBytes / 1024 / 1024)} MB）`);
+      return;
+    }
     const body = new FormData();
     body.append('file', file);
     try {
       await axios.post(`/api/student/tasks/${task.id}/submission`, body);
       messageApi.success(task.submitted ? '已更新为最新提交作品' : '作品已提交');
       await loadTasks();
-    } catch {
-      messageApi.error('提交失败，任务可能已截止');
+    } catch (error) {
+      if (axios.isAxiosError(error) && typeof error.response?.data === 'object' && error.response.data !== null
+        && 'message' in error.response.data && typeof error.response.data.message === 'string') {
+        messageApi.error(error.response.data.message);
+      } else {
+        messageApi.error('提交失败，任务可能已截止');
+      }
     }
   }
 
@@ -85,6 +104,12 @@ export function StudentWorkspace({ studentName }: StudentWorkspaceProps) {
                   </Button>
                 ))}
                 {task.submitted && <Text type="secondary">当前作品：{task.fileName}</Text>}
+                <Text type="secondary">
+                  {task.submissionRule.allowedExtensions.length
+                    ? `允许：${task.submissionRule.allowedExtensions.join('、')}，`
+                    : '未限制文件类型，'}
+                  最大 {Math.ceil(task.submissionRule.maxFileSizeBytes / 1024 / 1024)} MB
+                </Text>
                 <Upload beforeUpload={(file) => { void submit(task, file); return false; }} showUploadList={false} disabled={closed}>
                   <Button type="primary" block icon={<UploadOutlined />} disabled={closed}>{task.submitted ? '重新提交作品' : '提交作品'}</Button>
                 </Upload>

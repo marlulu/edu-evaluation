@@ -4,6 +4,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import CourseManagement from './CourseManagement';
+import { TaskWorkspace } from './TaskWorkspace';
 
 const { Paragraph, Text, Title } = Typography;
 type CourseDetail = { id: string; name: string };
@@ -33,6 +34,7 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
   const [keyword, setKeyword] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task>();
+  const [viewingTaskId, setViewingTaskId] = useState<string>();
   const [attachmentFiles, setAttachmentFiles] = useState<Array<{ uid: string; file: File }>>([]);
   const [saving, setSaving] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
@@ -121,6 +123,13 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
   }
 
   const visible = tasks.filter((task) => task.title.toLowerCase().includes(keyword.trim().toLowerCase()));
+  if (viewingTaskId) {
+    return <TaskWorkspace taskId={viewingTaskId} onBack={() => {
+      setViewingTaskId(undefined);
+      void loadTasks();
+    }} />;
+  }
+
   return (
     <div className="course-tasks-page">
       {contextHolder}
@@ -149,6 +158,7 @@ function CourseTasks({ course, onBack }: { course: CourseDetail; onBack: () => v
               </div>
               <div className="course-task-actions">
                 <Tag color={statusMeta[task.status].color}>{statusMeta[task.status].label}</Tag>
+                <Button type="link" size="small" onClick={() => setViewingTaskId(task.id)}>作业详情</Button>
                 <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openTaskModal(task)}>编辑</Button>
                 <Popconfirm title="确定删除该作业？" onConfirm={() => void deleteTask(task)}>
                   <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>

@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -27,6 +29,7 @@ public class CourseTaskService {
     private final CourseMemberRepository courseMembers;
     private final CourseTaskRepository tasks;
     private final TaskSubmissionRepository submissions;
+    private final TaskSubmissionRuleRepository rules;
     private final ModulePermissionService permissions;
     private final Path uploadDirectory;
 
@@ -36,11 +39,12 @@ public class CourseTaskService {
             CourseMemberRepository courseMembers,
             CourseTaskRepository tasks,
             TaskSubmissionRepository submissions,
+            TaskSubmissionRuleRepository rules,
             ModulePermissionService permissions,
             @Value("${app.upload-dir:data/uploads}") String uploadDirectory
     ) {
         this.courses = courses; this.courseStaff = courseStaff; this.courseMembers = courseMembers;
-        this.tasks = tasks; this.submissions = submissions; this.permissions = permissions;
+        this.tasks = tasks; this.submissions = submissions; this.rules = rules; this.permissions = permissions;
         this.uploadDirectory = Path.of(uploadDirectory, "task-submissions").toAbsolutePath().normalize();
     }
 
@@ -99,7 +103,7 @@ public class CourseTaskService {
                     TaskSubmissionEntity submission = submissions.findByTaskIdAndStudentId(task.getId(), principal.studentId()).orElse(null);
                     return new StudentTaskResponse(task.getId(), task.getCourseId(), task.getTitle(), task.getDescription(),
                             task.getDeadline(), submission != null, submission == null ? null : submission.getFileName(),
-                            submission == null ? null : submission.getSubmittedAt(), attachmentResponses(task.getId()));
+                            submission == null ? null : submission.getSubmittedAt(), attachmentResponses(task.getId()), ruleResponse(task.getId()));
                 }).toList();
     }
 
@@ -119,6 +123,7 @@ public class CourseTaskService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务不在可提交时间内");
         }
         String originalName = file.getOriginalFilename() == null ? "submission" : Path.of(file.getOriginalFilename()).getFileName().toString();
+        validateSubmission(file, originalName, ruleResponse(taskId));
         String objectKey = task.getId() + "/" + principal.studentId() + "/" + UUID.randomUUID() + "-" + originalName;
         try {
             Path destination = uploadDirectory.resolve(objectKey).normalize();
@@ -131,11 +136,13 @@ public class CourseTaskService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "提交文件保存失败", exception);
         }
         TaskSubmissionEntity submission = submissions.findByTaskIdAndStudentId(taskId, principal.studentId())
-                .orElseGet(() -> new TaskSubmissionEntity(UUID.randomUUID().toString(), taskId, principal.studentId(), objectKey, originalName));
-        submission.replace(objectKey, originalName);
+                .orElseGet(() -> new TaskSubmissionEntity(UUID.randomUUID().toString(), taskId, principal.studentId(), objectKey,
+                        originalName, file.getContentType(), file.getSize()));
+        submission.replace(objectKey, originalName, file.getContentType(), file.getSize());
         submissions.save(submission);
         return new StudentTaskResponse(task.getId(), task.getCourseId(), task.getTitle(), task.getDescription(),
-                task.getDeadline(), true, submission.getFileName(), submission.getSubmittedAt(), attachmentResponses(task.getId()));
+                task.getDeadline(), true, submission.getFileName(), submission.getSubmittedAt(), attachmentResponses(task.getId()),
+                ruleResponse(task.getId()));
     }
 
     @Transactional
@@ -257,11 +264,48 @@ public class CourseTaskService {
         return new TaskResponse(task.getId(), task.getCourseId(), task.getTitle(), task.getDescription(), task.getDeadline(), task.getStatus(), attachmentResponses(task.getId()));
     }
 
+    private TaskRuleResponse ruleResponse(String taskId) {
+        return rules.findById(taskId)
+                .map(rule -> new TaskRuleResponse(parseExtensions(rule.getAllowedExtensions()), rule.getMaxFileSizeBytes(), rule.getRuleText(),
+                        rule.getImportedFileName(), rule.getImportedAt()))
+                .orElseGet(() -> new TaskRuleResponse(List.of(), TaskSubmissionRuleEntity.DEFAULT_MAX_FILE_SIZE_BYTES, null, null, null));
+    }
+
+    private void validateSubmission(MultipartFile file, String fileName, TaskRuleResponse rule) {
+        if (file.getSize() > rule.maxFileSizeBytes()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "上传文件超过作业允许的最大大小");
+        }
+        String extension = extension(fileName);
+        if (!rule.allowedExtensions().isEmpty() && !rule.allowedExtensions().contains(extension)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "不支持该文件类型，允许：" + String.join("、", rule.allowedExtensions()));
+        }
+    }
+
+    private String extension(String fileName) {
+        int index = fileName.lastIndexOf('.');
+        return index < 0 ? "" : fileName.substring(index).toLowerCase(Locale.ROOT);
+    }
+
+    private List<String> parseExtensions(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .map(value -> value.startsWith(".") ? value.toLowerCase(Locale.ROOT) : "." + value.toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+    }
+
     public record TaskRequest(String title, String description, LocalDateTime deadline, TaskStatus status) {}
     public record AttachmentResponse(String fileName, String downloadUrl, String deleteUrl) {}
     public record TaskResponse(String id, String courseId, String title, String description, LocalDateTime deadline, TaskStatus status,
                                List<AttachmentResponse> attachments) {}
     public record StudentTaskResponse(String id, String courseId, String title, String description, LocalDateTime deadline,
                                       boolean submitted, String fileName, LocalDateTime submittedAt,
-                                      List<AttachmentResponse> attachments) {}
+                                      List<AttachmentResponse> attachments, TaskRuleResponse submissionRule) {}
+    public record TaskRuleResponse(List<String> allowedExtensions, long maxFileSizeBytes, String ruleText,
+                                   String importedFileName, LocalDateTime importedAt) {}
 }
