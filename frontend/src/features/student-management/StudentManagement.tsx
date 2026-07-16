@@ -150,7 +150,13 @@ export function StudentManagement() {
     try {
       const response = await axios.get('/api/students/import/template', { responseType: 'blob' });
       const url = URL.createObjectURL(response.data);
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = '学生导入模板.xlsx'; anchor.click(); URL.revokeObjectURL(url);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = '学生导入模板.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch {
       messageApi.error('模板下载失败');
     }
