@@ -32,7 +32,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, exception) -> writeError(response, objectMapper, 401, "Unauthorized", "请先登录"))
                         .accessDeniedHandler((request, response, exception) -> writeError(response, objectMapper, 403, "Forbidden", "没有权限执行此操作")))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/error", "/api/auth/login", "/api/auth/register/**", "/api/health", "/actuator/health").permitAll()
+                        .requestMatchers("/error", "/api/auth/login", "/api/auth/register/**", "/api/health", "/actuator/health", "/api/system/model-profiles/internal/active").permitAll()
                         .requestMatchers("/api/classes/**", "/api/assignments/**", "/api/work/**").denyAll()
                         .requestMatchers("/api/system/**", "/api/auth/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())

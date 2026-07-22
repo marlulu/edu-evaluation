@@ -8,6 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -16,13 +18,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 @Component
 @ConfigurationProperties(prefix = "app.ai-worker")
 public class AiWorkerClient {
 
-    private String baseUrl = "http://localhost:8002";
+    private String baseUrl = "http://localhost:8001";
     private String parseTaskPath = "/parse/tasks";
     private String evaluationTaskPath = "/evaluate/tasks";
     private int timeoutSeconds = 120;
@@ -90,7 +93,54 @@ public class AiWorkerClient {
     @SuppressWarnings("unchecked")
     public Map<String, Object> analyzeWorkAsync(Map<String, Object> request) {
         return createRestTemplate().postForObject(
-                baseUrl + "/work/analyze/async", request, Map.class);
+                baseUrl + "/analysis/manifest", request, Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> testModel(Map<String, Object> request) {
+        return createRestTemplate().postForObject(baseUrl + "/model-test", request, Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> submitAnalysisJob(Map<String, Object> request) {
+        try {
+            return createRestTemplate().postForObject(baseUrl + "/analysis/jobs", request, Map.class);
+        } catch (RestClientException exception) {
+            throw workerUnavailable(exception);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> analysisJob(String jobId) {
+        try {
+            return createRestTemplate().getForObject(baseUrl + "/analysis/jobs/" + jobId, Map.class);
+        } catch (HttpStatusCodeException exception) {
+            throw new ResponseStatusException(exception.getStatusCode(),
+                    extractUpstreamMessage(exception.getResponseBodyAsString()), exception);
+        } catch (RestClientException exception) {
+            throw workerUnavailable(exception);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> cancelAnalysisJob(String jobId) {
+        try {
+            return createRestTemplate().exchange(
+                    baseUrl + "/analysis/jobs/" + jobId,
+                    HttpMethod.DELETE,
+                    HttpEntity.EMPTY,
+                    Map.class).getBody();
+        } catch (HttpStatusCodeException exception) {
+            throw new ResponseStatusException(exception.getStatusCode(),
+                    extractUpstreamMessage(exception.getResponseBodyAsString()), exception);
+        } catch (RestClientException exception) {
+            throw workerUnavailable(exception);
+        }
+    }
+
+    private ResponseStatusException workerUnavailable(RestClientException exception) {
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "AI 分析服务暂不可用，请确认 AI Worker 已在 http://localhost:8001 启动后重试", exception);
     }
 
     private HttpHeaders fileHeaders(String fileName) {

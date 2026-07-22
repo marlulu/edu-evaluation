@@ -5,6 +5,7 @@ import com.example.eduevaluation.assignment.AssignmentService;
 import com.example.eduevaluation.classroom.ClassService;
 import com.example.eduevaluation.classroom.StudentRepository;
 import com.example.eduevaluation.common.AiWorkerClient;
+import com.example.eduevaluation.common.StorageService;
 import com.example.eduevaluation.work.WorkTaskService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,8 @@ class BatchImportServiceTest {
                 mock(ClassService.class),
                 assignmentService,
                 mock(AiWorkerClient.class),
-                mock(WorkTaskService.class));
+                mock(WorkTaskService.class),
+                mock(StorageService.class));
         ReflectionTestUtils.setField(service, "uploadDir", tempDir.toString());
     }
 

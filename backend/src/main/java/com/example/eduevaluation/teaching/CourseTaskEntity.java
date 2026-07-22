@@ -30,6 +30,7 @@ class CourseTaskEntity {
     @PreUpdate void updated() { updatedAt = LocalDateTime.now(); }
     String getId() { return id; } String getCourseId() { return courseId; } String getTitle() { return title; }
     String getDescription() { return description; } LocalDateTime getDeadline() { return deadline; } TaskStatus getStatus() { return status; }
+    LocalDateTime getCreatedAt() { return createdAt; }
     void update(String title, String description, LocalDateTime deadline, TaskStatus status) {
         this.title = title; this.description = description; this.deadline = deadline; this.status = status;
     }

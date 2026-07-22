@@ -30,7 +30,7 @@ public class WorkAnalysisController {
 
     private static final Logger log = LoggerFactory.getLogger(WorkAnalysisController.class);
 
-    @Value("${app.ai-worker.base-url:http://localhost:8000}")
+    @Value("${app.ai-worker.base-url:http://localhost:8001}")
     private String aiWorkerBaseUrl;
 
     @Value("${app.upload-dir:data/uploads}")
@@ -178,7 +178,19 @@ public class WorkAnalysisController {
 
     @PostMapping("/parse-criteria")
     public ResponseEntity<Map> parseCriteria(@RequestBody Map<String, Object> request) {
-        return forwardPost("/work/parse-criteria", request);
+        String filePath = (String) request.get("filePath");
+        if (filePath == null || filePath.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "缺少规则文件路径"));
+        }
+        try {
+            Path path = Paths.get(filePath);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("fileName", path.getFileName().toString());
+            payload.put("fileContent", Base64.getEncoder().encodeToString(Files.readAllBytes(path)));
+            return forwardPost("/work/parse-criteria", payload);
+        } catch (IOException exception) {
+            return ResponseEntity.internalServerError().body(Map.of("success", false, "message", "读取规则文件失败"));
+        }
     }
 
     // ====== 视频分析（转发到 AI Worker + MySQL 持久化）=====

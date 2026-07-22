@@ -230,11 +230,22 @@ async def parse_criteria(request: dict[str, Any]) -> dict[str, Any]:
     支持的格式：PDF, Word (.docx), 文本 (.txt)
     返回解析后的文本内容
     """
+    import os
     file_path = request.get("filePath") or request.get("file_path")
+    file_content = request.get("fileContent") or request.get("file_content")
+    temporary_path = None
+    if file_content:
+        import base64
+        import tempfile
+        suffix = os.path.splitext(request.get("fileName") or request.get("file_name") or "")[1]
+        temporary = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        temporary.write(base64.b64decode(file_content))
+        temporary.close()
+        temporary_path = temporary.name
+        file_path = temporary_path
     if not file_path:
         raise HTTPException(status_code=400, detail="缺少文件路径参数")
 
-    import os
     if not os.path.exists(file_path):
         raise HTTPException(status_code=400, detail=f"文件不存在: {file_path}")
 
@@ -250,11 +261,9 @@ async def parse_criteria(request: dict[str, Any]) -> dict[str, Any]:
         logger.warning("Parsed criteria file %s but got empty text", file_path)
         raise HTTPException(status_code=400, detail="无法解析文件内容")
 
-    return {
-        "success": True,
-        "text": text,
-        "filePath": file_path,
-    }
+    if temporary_path:
+        os.unlink(temporary_path)
+    return {"success": True, "text": text, "filePath": request.get("fileName") or file_path}
 
 
 # ====== 音频指导 API ======

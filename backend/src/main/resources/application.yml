@@ -5,9 +5,9 @@ spring:
   application:
     name: edu-evaluation-backend
   datasource:
-    url: jdbc:mysql://localhost:3307/edu_evaluation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:13306/edu_evaluation?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: edu
-    password: Edu@2026Secure
+    password: edu_password
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -41,12 +41,12 @@ app:
     token-hours: 8
   upload-dir: data/uploads
   storage:
-    endpoint: http://localhost:9002
+    endpoint: http://localhost:9000
     bucket: coursework-submissions
     access-key: minio
     secret-key: minio_password
   ai-worker:
-    base-url: http://localhost:8000
+    base-url: http://localhost:8001
     capabilities-path: /parse/capabilities
     parse-task-path: /parse/tasks
     provider-registry-path: /parse/providers
@@ -55,3 +55,4 @@ app:
     evaluation-review-path: /evaluate/reviews
     timeout-seconds: 120
     connect-timeout-seconds: 10
+    config-token: ${AI_WORKER_CONFIG_TOKEN:}

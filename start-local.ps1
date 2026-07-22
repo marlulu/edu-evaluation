@@ -154,7 +154,7 @@ if ($Service -eq "backend") {
 if ($Service -eq "ai-worker") {
     Set-Location (Join-Path $ProjectRoot "ai-worker")
     $Host.UI.RawUI.WindowTitle = "Edu Evaluation - AI Worker"
-    & ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8000
+    & ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload --port 8001
     exit $LASTEXITCODE
 }
 
@@ -195,7 +195,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Docker Compose failed to start the infrastructure services."
 }
 
-foreach ($port in 5173, 8080, 8000) {
+foreach ($port in 5173, 8080, 8001) {
     Stop-PortProcess -Port $port
 }
 
@@ -205,7 +205,7 @@ Start-ServiceWindow -Name "frontend"
 
 Write-Host ""
 Write-Host "Waiting for application services..." -ForegroundColor Cyan
-$workerReady = Wait-Endpoint -Name "AI Worker" -Url "http://localhost:8000/health"
+$workerReady = Wait-Endpoint -Name "AI Worker" -Url "http://localhost:8001/health"
 $backendReady = Wait-Endpoint -Name "Backend" -Url "http://localhost:8080/api/health"
 $frontendReady = Wait-Endpoint -Name "Frontend" -Url "http://localhost:5173" -TimeoutSeconds 60
 
@@ -213,7 +213,7 @@ Write-Host ""
 Write-Host "Local service addresses:" -ForegroundColor Cyan
 Write-Host "  Frontend:            http://localhost:5173"
 Write-Host "  Backend health:      http://localhost:8080/api/health"
-Write-Host "  AI Worker health:    http://localhost:8000/health"
+Write-Host "  AI Worker health:    http://localhost:8001/health"
 Write-Host "  MinIO console:       http://localhost:9003"
 
 if (-not ($workerReady -and $backendReady -and $frontendReady)) {

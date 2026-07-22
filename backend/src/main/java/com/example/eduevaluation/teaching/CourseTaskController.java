@@ -61,6 +61,51 @@ public class CourseTaskController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/tasks/{taskId}/submission-rule")
+    public CourseTaskService.TaskRuleResponse submissionRule(
+            @PathVariable String taskId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.submissionRule(taskId, principal);
+    }
+
+    @PutMapping("/tasks/{taskId}/submission-rule")
+    public CourseTaskService.TaskRuleResponse updateSubmissionRule(
+            @PathVariable String taskId,
+            @RequestBody CourseTaskService.TaskRuleRequest request,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.updateSubmissionRule(taskId, request, principal);
+    }
+
+    @PostMapping("/tasks/{taskId}/submission-rule/import")
+    public CourseTaskService.TaskRuleResponse importSubmissionRule(
+            @PathVariable String taskId,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.importSubmissionRule(taskId, file, principal);
+    }
+
+    @PostMapping("/tasks/description/import")
+    public CourseTaskService.TaskDescriptionImportResponse importTaskDescription(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.importTaskDescription(file, principal);
+    }
+
+    @GetMapping("/tasks/{taskId}/submission-rule/source")
+    public ResponseEntity<Resource> downloadSubmissionRuleSource(
+            @PathVariable String taskId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        CourseTaskService.RuleSourceDownload source = service.downloadSubmissionRuleSource(taskId, principal);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + source.fileName() + "\"")
+                .body(source.resource());
+    }
+
     @PostMapping("/tasks/{taskId}/attachments")
     public CourseTaskService.AttachmentResponse uploadAttachment(
             @PathVariable String taskId,
@@ -105,6 +150,11 @@ public class CourseTaskController {
         return service.myTasks(principal);
     }
 
+    @GetMapping("/student/courses")
+    public List<CourseTaskService.StudentCourseResponse> myCourses(@AuthenticationPrincipal AppPrincipal principal) {
+        return service.myCourses(principal);
+    }
+
     @PostMapping("/student/tasks/{taskId}/submission")
     public CourseTaskService.StudentTaskResponse submit(
             @PathVariable String taskId,
@@ -112,5 +162,59 @@ public class CourseTaskController {
             @AuthenticationPrincipal AppPrincipal principal
     ) {
         return service.submit(taskId, file, principal);
+    }
+
+    @PostMapping("/student/tasks/{taskId}/submissions")
+    public CourseTaskService.StudentTaskResponse submitBatch(
+            @PathVariable String taskId,
+            @RequestParam("files") List<MultipartFile> files,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.submit(taskId, files, principal);
+    }
+
+    @GetMapping("/student/tasks/{taskId}/submissions")
+    public List<CourseTaskService.SubmissionBatchHistoryResponse> submissionHistory(
+            @PathVariable String taskId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.submissionHistory(taskId, principal);
+    }
+
+    @GetMapping("/tasks/{taskId}/submissions")
+    public List<CourseTaskService.TeacherSubmissionResponse> teacherSubmissions(
+            @PathVariable String taskId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.teacherSubmissions(taskId, principal);
+    }
+
+    @PostMapping("/tasks/{taskId}/students/{studentId}/analysis")
+    public CourseTaskService.AnalysisStartResponse startAnalysis(
+            @PathVariable String taskId,
+            @PathVariable String studentId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.startAnalysis(taskId, studentId, principal);
+    }
+
+    @GetMapping("/tasks/{taskId}/students/{studentId}/analysis")
+    public CourseTaskService.AnalysisStartResponse latestAnalysis(
+            @PathVariable String taskId,
+            @PathVariable String studentId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.latestAnalysis(taskId, studentId, principal);
+    }
+
+    @GetMapping("/submissions/{submissionId}/download")
+    public ResponseEntity<Resource> downloadSubmission(
+            @PathVariable String submissionId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        CourseTaskService.SubmissionDownload download = service.downloadSubmission(submissionId, principal);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + download.fileName() + "\"")
+                .body(download.resource());
     }
 }

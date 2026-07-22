@@ -1,6 +1,7 @@
 package com.example.eduevaluation.teaching;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record CourseResponse(
         String id,
@@ -8,6 +9,8 @@ public record CourseResponse(
         String description,
         String teacherId,
         String teacherName,
+        List<String> staffIds,
+        List<String> staffNames,
         int studentCount,
         int taskCount,
         CourseStatus status,

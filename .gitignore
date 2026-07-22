@@ -22,17 +22,23 @@ frontend/vite.config.d.ts
 backend/target/
 backend/.mvn/wrapper/maven-wrapper.jar
 backend/data/
+backend/run-dev-backend.cmd
 .m2/
 
 # Python
 ai-worker/.venv/
 **/__pycache__/
 *.py[cod]
-ai-worker/.pytest_cache/
+**/.pytest_cache/
+ai-worker/data/
 
 # Runtime logs
 *.log
 img*.png
+ai-worker/test_ocr.png
+
+# Build/tool caches
+.vite/
 
 # Local infrastructure data
 infra/data/

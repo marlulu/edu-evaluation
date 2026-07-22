@@ -12,15 +12,17 @@ class TaskSubmissionEntity {
     @Id private String id;
     @Column(name = "task_id", nullable = false) private String taskId;
     @Column(name = "student_id", nullable = false) private String studentId;
+    @Column(name = "submission_batch_id", nullable = false) private String submissionBatchId;
     @Column(name = "object_key", nullable = false) private String objectKey;
     @Column(name = "file_name", nullable = false) private String fileName;
     @Column(name = "content_type") private String contentType;
     @Column(name = "file_size_bytes") private Long fileSizeBytes;
+    @Column(name = "analysis_job_id") private String analysisJobId;
     @Column(name = "submitted_at", nullable = false) private LocalDateTime submittedAt;
     protected TaskSubmissionEntity() {}
-    TaskSubmissionEntity(String id, String taskId, String studentId, String objectKey, String fileName,
+    TaskSubmissionEntity(String id, String taskId, String studentId, String submissionBatchId, String objectKey, String fileName,
                          String contentType, long fileSizeBytes) {
-        this.id = id; this.taskId = taskId; this.studentId = studentId; this.objectKey = objectKey; this.fileName = fileName;
+        this.id = id; this.taskId = taskId; this.studentId = studentId; this.submissionBatchId = submissionBatchId; this.objectKey = objectKey; this.fileName = fileName;
         this.contentType = contentType; this.fileSizeBytes = fileSizeBytes;
         this.submittedAt = LocalDateTime.now();
     }
@@ -28,7 +30,9 @@ class TaskSubmissionEntity {
         this.objectKey = objectKey; this.fileName = fileName; this.contentType = contentType;
         this.fileSizeBytes = fileSizeBytes; this.submittedAt = LocalDateTime.now();
     }
-    String getId() { return id; } String getTaskId() { return taskId; } String getStudentId() { return studentId; } String getFileName() { return fileName; }
+    String getId() { return id; } String getTaskId() { return taskId; } String getStudentId() { return studentId; } String getSubmissionBatchId() { return submissionBatchId; } String getFileName() { return fileName; }
     String getObjectKey() { return objectKey; } String getContentType() { return contentType; } Long getFileSizeBytes() { return fileSizeBytes; }
+    String getAnalysisJobId() { return analysisJobId; }
+    void setAnalysisJobId(String analysisJobId) { this.analysisJobId = analysisJobId; }
     LocalDateTime getSubmittedAt() { return submittedAt; }
 }

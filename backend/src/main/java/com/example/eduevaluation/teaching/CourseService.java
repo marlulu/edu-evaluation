@@ -11,10 +11,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class CourseService {
@@ -27,19 +34,25 @@ public class CourseService {
     private final CourseStaffRepository courseStaffRepository;
     private final StudentManagementService studentManagementService;
     private final ModulePermissionService permissions;
+    private final CourseAttachmentRepository courseAttachments;
+    private final Path courseAttachmentDirectory;
 
     public CourseService(
             CourseRepository courseRepository,
             CourseMemberRepository courseMemberRepository,
             CourseStaffRepository courseStaffRepository,
             StudentManagementService studentManagementService,
-            ModulePermissionService permissions
+            ModulePermissionService permissions,
+            CourseAttachmentRepository courseAttachments,
+            @Value("${app.upload-dir:data/uploads}") String uploadDirectory
     ) {
         this.courseRepository = courseRepository;
         this.courseMemberRepository = courseMemberRepository;
         this.courseStaffRepository = courseStaffRepository;
         this.studentManagementService = studentManagementService;
         this.permissions = permissions;
+        this.courseAttachments = courseAttachments;
+        this.courseAttachmentDirectory = Path.of(uploadDirectory, "course-attachments").toAbsolutePath().normalize();
     }
 
     @Transactional(readOnly = true)
@@ -82,6 +95,102 @@ public class CourseService {
                 .filter(student -> memberIds.contains(student.id()))
                 .map(student -> new CourseStudentOption(student.id(), student.studentNumber(), student.name()))
                 .toList();
+    }
+
+    @Transactional
+    public CourseStudentOption addStudent(String courseId, CourseStudentRequest request, AppPrincipal principal) {
+        permissions.require(principal, ModulePermissionService.COURSE, ModuleAction.EDIT);
+        CourseEntity course = requireCourse(courseId);
+        requireCourseAccess(course, principal);
+        String studentId = request.studentId().trim();
+        if (!studentManagementService.allExist(List.of(studentId))) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "学生不存在");
+        }
+        if (courseMemberRepository.existsByCourseIdAndStudentId(courseId, studentId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该学生已在课程名单中");
+        }
+        courseMemberRepository.save(new CourseMemberEntity(UUID.randomUUID().toString(), courseId, studentId));
+        return studentManagementService.courseStudents().stream()
+                .filter(student -> student.id().equals(studentId))
+                .findFirst()
+                .map(student -> new CourseStudentOption(student.id(), student.studentNumber(), student.name()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "学生不存在"));
+    }
+
+    @Transactional
+    public List<CourseStudentOption> addStudentGroups(
+            String courseId,
+            CourseStudentGroupRequest request,
+            AppPrincipal principal
+    ) {
+        permissions.require(principal, ModulePermissionService.COURSE, ModuleAction.EDIT);
+        CourseEntity course = requireCourse(courseId);
+        requireCourseAccess(course, principal);
+        List<String> studentIds = studentManagementService.studentIdsForGroups(request.groupIds());
+        Set<String> existingStudentIds = courseMemberRepository.findByCourseId(courseId).stream()
+                .map(CourseMemberEntity::getStudentId)
+                .collect(java.util.stream.Collectors.toSet());
+        List<String> addedStudentIds = studentIds.stream()
+                .filter(studentId -> !existingStudentIds.contains(studentId))
+                .toList();
+        addedStudentIds.forEach(studentId -> courseMemberRepository.save(
+                new CourseMemberEntity(UUID.randomUUID().toString(), courseId, studentId)
+        ));
+        Set<String> addedIds = Set.copyOf(addedStudentIds);
+        return studentManagementService.courseStudents().stream()
+                .filter(student -> addedIds.contains(student.id()))
+                .map(student -> new CourseStudentOption(student.id(), student.studentNumber(), student.name()))
+                .toList();
+    }
+
+    @Transactional
+    public void removeStudent(String courseId, String studentId, AppPrincipal principal) {
+        permissions.require(principal, ModulePermissionService.COURSE, ModuleAction.EDIT);
+        CourseEntity course = requireCourse(courseId);
+        requireCourseAccess(course, principal);
+        if (courseMemberRepository.deleteByCourseIdAndStudentId(courseId, studentId) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "该学生不在课程名单中");
+        }
+    }
+
+    @Transactional
+    public CourseAttachmentResponse uploadAttachment(String courseId, MultipartFile file, AppPrincipal principal) {
+        permissions.require(principal, ModulePermissionService.COURSE, ModuleAction.EDIT);
+        CourseEntity course = requireCourse(courseId);
+        requireCourseAccess(course, principal);
+        if (file == null || file.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择课程附件");
+        String fileName = file.getOriginalFilename() == null ? "attachment" : Path.of(file.getOriginalFilename()).getFileName().toString();
+        String objectKey = courseId + "/" + UUID.randomUUID() + "-" + fileName;
+        try {
+            Path destination = courseAttachmentDirectory.resolve(objectKey).normalize();
+            if (!destination.startsWith(courseAttachmentDirectory)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "文件名不合法");
+            Files.createDirectories(destination.getParent());
+            file.transferTo(destination);
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "课程附件保存失败", exception);
+        }
+        CourseAttachmentEntity attachment = courseAttachments.save(new CourseAttachmentEntity(UUID.randomUUID().toString(), courseId, fileName, objectKey));
+        return attachmentResponse(attachment);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CourseAttachmentResponse> attachments(String courseId, AppPrincipal principal) {
+        CourseEntity course = requireCourse(courseId); requireCourseAccess(course, principal);
+        return courseAttachments.findByCourseIdOrderByFileName(courseId).stream().map(this::attachmentResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Resource downloadAttachment(String courseId, String attachmentId, AppPrincipal principal) {
+        CourseEntity course = requireCourse(courseId); requireCourseAccess(course, principal);
+        CourseAttachmentEntity attachment = courseAttachments.findById(attachmentId).filter(item -> item.getCourseId().equals(courseId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "课程附件不存在"));
+        Path file = courseAttachmentDirectory.resolve(attachment.getObjectKey()).normalize();
+        if (!file.startsWith(courseAttachmentDirectory) || !Files.isRegularFile(file)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "课程附件不存在");
+        return new FileSystemResource(file);
+    }
+
+    private CourseAttachmentResponse attachmentResponse(CourseAttachmentEntity attachment) {
+        return new CourseAttachmentResponse(attachment.getId(), attachment.getFileName(), "/api/courses/" + attachment.getCourseId() + "/attachments/" + attachment.getId());
     }
 
     @Transactional
@@ -179,12 +288,25 @@ public class CourseService {
     }
 
     private CourseResponse toResponse(CourseEntity course) {
+        List<CourseStaffEntity> staff = courseStaffRepository.findByCourseId(course.getId());
+        List<String> staffIds = staff.stream()
+                .map(CourseStaffEntity::getTeacherId)
+                .toList();
+        List<String> staffNames = staff.stream()
+                .map(CourseStaffEntity::getTeacherName)
+                .toList();
+        if (staffIds.isEmpty()) {
+            staffIds = List.of(course.getTeacherId());
+            staffNames = List.of(course.getTeacherName());
+        }
         return new CourseResponse(
                 course.getId(),
                 course.getName(),
                 course.getDescription(),
                 course.getTeacherId(),
                 course.getTeacherName(),
+                staffIds,
+                staffNames,
                 (int) courseMemberRepository.countByCourseId(course.getId()),
                 0,
                 course.getStatus(),
@@ -192,6 +314,8 @@ public class CourseService {
                 course.getUpdatedAt()
         );
     }
+
+    public record CourseAttachmentResponse(String id, String fileName, String downloadUrl) {}
 
     private void replaceMembers(String courseId, List<String> groupIds, List<String> studentIds) {
         List<String> selectedGroupIds = groupIds == null ? Collections.emptyList() : groupIds;
@@ -212,6 +336,7 @@ public class CourseService {
         selected.add(principal.userId());
         Map<String, String> staffNames = permissions.requireTeachingStaff(List.copyOf(selected));
         courseStaffRepository.deleteByCourseId(courseId);
+        courseStaffRepository.flush();
         selected.forEach(userId -> courseStaffRepository.save(new CourseStaffEntity(
                 UUID.randomUUID().toString(),
                 courseId,

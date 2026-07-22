@@ -1,10 +1,8 @@
 import {
   AppstoreOutlined,
-  AudioOutlined,
   BellOutlined,
   BookOutlined,
   CloseOutlined,
-  FileSearchOutlined,
   FileAddOutlined,
   LogoutOutlined,
   MenuOutlined,
@@ -28,8 +26,6 @@ import {
   persistSession,
   type AuthSession
 } from './features/auth/api';
-import { AudioAnalysis } from './features/audio-analysis/AudioAnalysis';
-import { DocumentValidation } from './features/document-validation/DocumentValidation';
 import { SystemConfig } from './features/system-config/SystemConfig';
 import { StudentWorkspace } from './features/student-workspace/StudentWorkspace';
 import { StudentManagement } from './features/student-management/StudentManagement';
@@ -38,8 +34,8 @@ import TeachingManagement from './features/teaching-management/TeachingManagemen
 const { Paragraph, Text, Title } = Typography;
 
 type SessionUser = AuthSession;
-type ModuleKey = 'dashboard' | 'teaching' | 'audio' | 'document' | 'config' | 'student' | 'students';
-type NavigationGroup = 'overview' | 'teaching' | 'evaluation' | 'system';
+type ModuleKey = 'dashboard' | 'teaching' | 'config' | 'student' | 'students';
+type NavigationGroup = 'overview' | 'teaching' | 'system';
 
 const MODULE_KEY = 'edu-evaluation-active-module';
 
@@ -65,8 +61,8 @@ const roleLabel: Record<UserRole, string> = {
 
 const roleModules: Record<UserRole, ModuleKey[]> = {
   ADMIN: ['config'],
-  TEACHER: ['dashboard', 'teaching', 'students', 'audio', 'document'],
-  ASSISTANT: ['dashboard', 'teaching', 'students', 'audio', 'document'],
+  TEACHER: ['dashboard', 'teaching', 'students'],
+  ASSISTANT: ['dashboard', 'teaching', 'students'],
   STUDENT: ['student']
 };
 
@@ -85,18 +81,6 @@ const moduleMeta: Record<
     icon: <BookOutlined />,
     description: '管理课程、课程成员和课程任务。',
     group: 'teaching'
-  },
-  audio: {
-    label: '音频分析',
-    icon: <AudioOutlined />,
-    description: '分析音频材料中的语音与内容信息。',
-    group: 'evaluation'
-  },
-  document: {
-    label: '文档校验',
-    icon: <FileSearchOutlined />,
-    description: '验证文档文字和表格的解析结果。',
-    group: 'evaluation'
   },
   config: {
     label: '系统配置',
@@ -121,7 +105,6 @@ const moduleMeta: Record<
 const navigationMeta: Record<NavigationGroup, string> = {
   overview: '首页',
   teaching: '教学管理',
-  evaluation: '智能评阅',
   system: '系统管理'
 };
 
@@ -134,7 +117,7 @@ export default function App() {
   const [sessionUser, setSessionUser] = useState<SessionUser | undefined>();
   const [activeModule, setActiveModule] = useState<ModuleKey>(() => {
     const saved = localStorage.getItem(MODULE_KEY);
-    if (saved && ['dashboard', 'teaching', 'audio', 'document', 'config', 'student', 'students'].includes(saved)) {
+    if (saved && ['dashboard', 'teaching', 'config', 'student', 'students'].includes(saved)) {
       return saved as ModuleKey;
     }
     return 'dashboard';
@@ -489,7 +472,6 @@ function PublicCanvas({ onLogin }: { onLogin: () => void }) {
       <section className="public-grid" aria-label="平台能力概览">
         {[
           ['课程任务', '围绕教学节奏组织任务与提交。'],
-          ['智能评阅', '在统一工作区中查看多维分析结果。'],
           ['结果反馈', '让教师和学生清晰掌握评价进度。']
         ].map(([title, description]) => (
           <Card key={title} className="overview-card">
@@ -515,12 +497,6 @@ function AuthenticatedContent({
 }) {
   if (activeModule === 'teaching') {
     return <TeachingManagement />;
-  }
-  if (activeModule === 'audio') {
-    return <AudioAnalysis />;
-  }
-  if (activeModule === 'document') {
-    return <DocumentValidation />;
   }
   if (activeModule === 'config') {
     return <SystemConfig />;

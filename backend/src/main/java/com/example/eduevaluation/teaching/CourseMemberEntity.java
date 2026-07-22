@@ -31,4 +31,8 @@ class CourseMemberEntity {
     String getStudentId() {
         return studentId;
     }
+
+    String getCourseId() {
+        return courseId;
+    }
 }

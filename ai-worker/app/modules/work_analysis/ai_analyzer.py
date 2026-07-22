@@ -37,17 +37,32 @@ class AnalysisResult:
     suggestions: list[str] = field(default_factory=list)
 
 
+def _stream_ai_response(client, model: str, input_data: list, max_output_tokens: int) -> str:
+    """Execute all intelligent-analysis requests through the Responses stream."""
+    chunks: list[str] = []
+    with client.responses.create(
+        model=model,
+        input=input_data,
+        stream=True,
+        store=True,
+        max_output_tokens=max_output_tokens,
+    ) as stream:
+        for event in stream:
+            if event.type == "response.output_text.delta":
+                chunks.append(event.delta)
+    return "".join(chunks).strip()
+
+
 def _call_ai(client, model: str, prompt: str, max_retries: int = 2) -> str:
     """通用 AI 调用（带重试）"""
     for attempt in range(max_retries):
         try:
-            resp = client.responses.create(
+            return _stream_ai_response(
+                client,
                 model=model,
-                input=[{"role": "user", "content": prompt}],
-                store=False,
+                input_data=[{"role": "user", "content": prompt}],
                 max_output_tokens=MAX_OUTPUT_TOKENS,
             )
-            return resp.output_text
         except Exception as e:
             if attempt < max_retries - 1:
                 wait = attempt + 1
@@ -61,13 +76,12 @@ def _call_ai_multimodal(client, model: str, content: list, max_retries: int = 2)
     """多模态 AI 调用（带重试）"""
     for attempt in range(max_retries):
         try:
-            resp = client.responses.create(
+            return _stream_ai_response(
+                client,
                 model=model,
-                input=[{"role": "user", "content": content}],
-                store=False,
+                input_data=[{"role": "user", "content": content}],
                 max_output_tokens=1200,
             )
-            return resp.output_text.strip()
         except Exception as e:
             if attempt < max_retries - 1:
                 wait = attempt + 1

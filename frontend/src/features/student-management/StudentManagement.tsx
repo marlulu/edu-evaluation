@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const { Paragraph, Text, Title } = Typography;
 type Group = { id: string; name: string; studentCount: number };
-type Student = { id: string; studentNumber: string; studentName: string; email: string | null; groupNames: string[] };
+type Student = { id: string; studentNumber: string; studentName: string; email: string | null; groupNames: string[]; initialPassword: string | null };
 type StudentForm = { studentNumber: string; studentName: string; email?: string; groupIds?: string[] };
 type ImportRow = { rowNumber: number; studentNumber: string; studentName: string; email: string | null; valid: boolean; issue: string | null };
 type ImportPreview = { draftId: string; rows: ImportRow[]; validCount: number; invalidCount: number };
@@ -165,6 +165,7 @@ export function StudentManagement() {
   const columns: ColumnsType<Student> = [
     { title: '学号', dataIndex: 'studentNumber', width: 150 },
     { title: '姓名', dataIndex: 'studentName', width: 130 },
+    { title: '初始密码', dataIndex: 'initialPassword', width: 140, render: (password: string | null) => password || <Text type="secondary">已设置</Text> },
     { title: '邮箱', dataIndex: 'email', render: (email) => email || <Text type="secondary">-</Text> },
     { title: '组别', dataIndex: 'groupNames', render: (names: string[]) => <Space size={[4, 4]} wrap>{names.map((name) => <Tag key={name}>{name}</Tag>)}</Space> },
     { title: '操作', width: 140, render: (_, student) => <Space size={0}><Button type="link" onClick={() => openStudent(student)}>编辑</Button><Popconfirm title="确认删除该学生？" onConfirm={() => void deleteStudent(student)}><Button type="link" danger icon={<DeleteOutlined />}>删除</Button></Popconfirm></Space> }

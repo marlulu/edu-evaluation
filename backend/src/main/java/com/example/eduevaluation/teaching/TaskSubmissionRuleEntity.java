@@ -19,6 +19,8 @@ class TaskSubmissionRuleEntity {
     private long maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_BYTES;
     @Column(name = "rule_text", columnDefinition = "TEXT")
     private String ruleText;
+    @Column(name = "scoring_rule_text", columnDefinition = "TEXT")
+    private String scoringRuleText;
     @Column(name = "imported_file_name")
     private String importedFileName;
     @Column(name = "imported_at")
@@ -34,13 +36,19 @@ class TaskSubmissionRuleEntity {
     String getAllowedExtensions() { return allowedExtensions; }
     long getMaxFileSizeBytes() { return maxFileSizeBytes; }
     String getRuleText() { return ruleText; }
+    String getScoringRuleText() { return scoringRuleText; }
     String getImportedFileName() { return importedFileName; }
     LocalDateTime getImportedAt() { return importedAt; }
 
     void update(String allowedExtensions, long maxFileSizeBytes, String ruleText, String importedFileName) {
+        update(allowedExtensions, maxFileSizeBytes, ruleText, null, importedFileName);
+    }
+
+    void update(String allowedExtensions, long maxFileSizeBytes, String ruleText, String scoringRuleText, String importedFileName) {
         this.allowedExtensions = allowedExtensions;
         this.maxFileSizeBytes = maxFileSizeBytes;
         this.ruleText = ruleText;
+        this.scoringRuleText = scoringRuleText;
         this.importedFileName = importedFileName;
         this.importedAt = importedFileName == null ? null : LocalDateTime.now();
     }

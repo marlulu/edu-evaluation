@@ -6,6 +6,7 @@ import com.example.eduevaluation.classroom.ClassService;
 import com.example.eduevaluation.classroom.StudentEntity;
 import com.example.eduevaluation.classroom.StudentRepository;
 import com.example.eduevaluation.common.AiWorkerClient;
+import com.example.eduevaluation.common.StorageService;
 import com.example.eduevaluation.work.WorkTaskService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -56,6 +57,7 @@ public class BatchImportService {
     private final AssignmentService assignmentService;
     private final AiWorkerClient aiWorkerClient;
     private final WorkTaskService workTaskService;
+    private final StorageService storageService;
 
     @Value("${app.upload-dir:data/uploads}")
     private String uploadDir;
@@ -65,12 +67,14 @@ public class BatchImportService {
             ClassService classService,
             AssignmentService assignmentService,
             AiWorkerClient aiWorkerClient,
-            WorkTaskService workTaskService) {
+            WorkTaskService workTaskService,
+            StorageService storageService) {
         this.studentRepository = studentRepository;
         this.classService = classService;
         this.assignmentService = assignmentService;
         this.aiWorkerClient = aiWorkerClient;
         this.workTaskService = workTaskService;
+        this.storageService = storageService;
     }
 
     public Map<String, Object> preview(
@@ -242,18 +246,18 @@ public class BatchImportService {
             Path source = safeResolve(extractDir, entry.primaryFile);
             String extension = extension(entry.primaryFile);
             String fileType = fileType(extension);
-            Path destinationDir = Path.of(uploadDir, "works", fileType).toAbsolutePath().normalize();
-            Files.createDirectories(destinationDir);
-            Path destination = destinationDir.resolve(UUID.randomUUID() + extension);
-            Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
+            String objectKey = "submissions/batch/" + batch.batchId + "/" + entry.studentNumber
+                    + "/" + UUID.randomUUID() + extension;
+            try (InputStream input = Files.newInputStream(source)) {
+                storageService.uploadFile(objectKey, input,
+                        Files.probeContentType(source) == null ? "application/octet-stream"
+                                : Files.probeContentType(source));
+            }
 
             AssignmentEntity assignment = assignmentService.getAssignment(batch.assignmentId);
             Map<String, Object> request = new LinkedHashMap<>();
-            request.put("filePath", destination.toString().replace("\\", "/"));
-            request.put("fileName", Path.of(entry.primaryFile).getFileName().toString());
-            request.put("criteriaText", assignment == null ? null : assignment.getCriteriaText());
-            request.put("assignmentId", batch.assignmentId);
-            request.put("options", Map.of("maxKeyframes", 12));
+            request.put("object_keys", List.of(objectKey));
+            request.put("rule_text", assignment == null ? "" : assignment.getCriteriaText());
             if (supportingText != null) {
                 request.put("supportingDocumentName",
                         Path.of(entry.supportingFile).getFileName().toString());
@@ -261,8 +265,8 @@ public class BatchImportService {
             }
 
             entry.status = "analyzing";
-            Map<String, Object> response = aiWorkerClient.analyzeWorkAsync(request);
-            String taskId = String.valueOf(response.get("task_id"));
+            Map<String, Object> response = aiWorkerClient.submitAnalysisJob(request);
+            String taskId = String.valueOf(response.get("id"));
             if (taskId == null || "null".equals(taskId)) {
                 throw new IllegalStateException("分析服务未返回任务编号。");
             }

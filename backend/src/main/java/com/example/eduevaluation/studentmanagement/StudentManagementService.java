@@ -42,7 +42,7 @@ public class StudentManagementService {
         return students.findAll().stream()
                 .map(student -> new StudentResponse(student.getId(), student.getStudentNumber(), student.getStudentName(),
                         student.getEmail(), groupNames.getOrDefault(student.getId(), List.of()).stream()
-                                .map(names::get).filter(java.util.Objects::nonNull).toList(), null))
+                                .map(names::get).filter(java.util.Objects::nonNull).toList(), student.getInitialPassword()))
                 .toList();
     }
 

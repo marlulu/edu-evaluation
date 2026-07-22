@@ -10,9 +10,12 @@ import com.example.eduevaluation.auth.AppPrincipal;
 import com.example.eduevaluation.auth.ModuleAction;
 import com.example.eduevaluation.auth.ModulePermissionService;
 import com.example.eduevaluation.auth.UserRole;
+import com.example.eduevaluation.common.AiWorkerClient;
+import com.example.eduevaluation.common.StorageService;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -27,8 +30,11 @@ class CourseTaskServiceTest {
     private final TaskSubmissionRepository submissions = mock(TaskSubmissionRepository.class);
     private final TaskSubmissionRuleRepository rules = mock(TaskSubmissionRuleRepository.class);
     private final ModulePermissionService permissions = mock(ModulePermissionService.class);
+    private final AiWorkerClient aiWorkerClient = mock(AiWorkerClient.class);
+    private final StorageService storageService = mock(StorageService.class);
     private final CourseTaskService service = new CourseTaskService(
-            courses, staff, members, tasks, submissions, rules, permissions,
+            courses, staff, members, tasks, submissions, rules, permissions, aiWorkerClient,
+            storageService,
             Path.of("target", "test-uploads").toString()
     );
     private final AppPrincipal student = new AppPrincipal("user-1", "student", UserRole.STUDENT, "student-1");
@@ -106,6 +112,25 @@ class CourseTaskServiceTest {
         service.deleteTask("task-1", teacher);
 
         verify(permissions).require(teacher, ModulePermissionService.TASK, ModuleAction.DELETE);
+    }
+
+    @Test
+    void importsPdfRuleTextAndRecordsTheSourceFile() {
+        CourseTaskEntity task = task("task-1", "course-1", LocalDateTime.now().plusDays(1));
+        AppPrincipal teacher = new AppPrincipal("teacher-1", "teacher", UserRole.TEACHER, null);
+        MockMultipartFile file = new MockMultipartFile("file", "rule.pdf", "application/pdf", new byte[] {1});
+        TaskSubmissionRuleEntity existingRule = new TaskSubmissionRuleEntity("task-1");
+        when(tasks.findById("task-1")).thenReturn(Optional.of(task));
+        when(courses.existsById("course-1")).thenReturn(true);
+        when(staff.existsByCourseIdAndTeacherId("course-1", "teacher-1")).thenReturn(true);
+        when(rules.findById("task-1")).thenReturn(Optional.of(existingRule));
+        when(aiWorkerClient.validateDocument(file)).thenReturn(Map.of("text", "提交 PDF，大小不超过 10 MB。"));
+
+        CourseTaskService.TaskRuleResponse response = service.importSubmissionRule("task-1", file, teacher);
+
+        assertThat(response.ruleText()).isEqualTo("提交 PDF，大小不超过 10 MB。");
+        assertThat(response.importedFileName()).isEqualTo("rule.pdf");
+        verify(rules).save(org.mockito.ArgumentMatchers.any(TaskSubmissionRuleEntity.class));
     }
 
     private CourseTaskEntity task(String id, String courseId, LocalDateTime deadline) {

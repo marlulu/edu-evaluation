@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+from app.paddle_ocr_compat import create_paddle_ocr, recognize_paddle_text
 
 if TYPE_CHECKING:
     from .frame_extractor import Keyframe
@@ -47,7 +48,7 @@ def _ocr_with_paddle(keyframes: list[Keyframe]) -> list[Keyframe] | None:
 
     try:
         logger.info("Loading PaddleOCR model...")
-        reader = PaddleOCR(use_textline_orientation=True, lang="ch")
+        reader = create_paddle_ocr()
 
         for i, kf in enumerate(keyframes):
             if not kf.path:
@@ -55,13 +56,11 @@ def _ocr_with_paddle(keyframes: list[Keyframe]) -> list[Keyframe] | None:
 
             logger.info("OCR [%d/%d] %.1fs...", i + 1, len(keyframes), kf.timestamp)
             try:
-                ocr_result = reader.ocr(kf.path, cls=True)
-                texts = []
-                if ocr_result and ocr_result[0]:
-                    for line in ocr_result[0]:
-                        bbox, (text, conf) = line[0], line[1]
-                        if conf > 0.5:
-                            texts.append({"text": text, "confidence": round(conf, 2)})
+                texts = [
+                    {"text": text, "confidence": round(confidence, 2)}
+                    for text, confidence in recognize_paddle_text(reader, kf.path)
+                    if confidence > 0.5
+                ]
 
                 kf.ocr_texts = texts
                 kf.ocr_summary = " | ".join(t["text"] for t in texts[:5]) if texts else "(no text)"

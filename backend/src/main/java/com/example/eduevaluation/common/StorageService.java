@@ -112,4 +112,16 @@ public class StorageService {
             return false;
         }
     }
+
+    public InputStream openFile(String objectName) {
+        try {
+            return minioClient.getObject(
+                    GetObjectArgs.builder()
+                            .bucket(properties.getBucket())
+                            .object(objectName)
+                            .build());
+        } catch (Exception exception) {
+            throw new RuntimeException("从 MinIO 读取文件失败", exception);
+        }
+    }
 }

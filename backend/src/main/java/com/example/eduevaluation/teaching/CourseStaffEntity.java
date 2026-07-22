@@ -30,4 +30,8 @@ class CourseStaffEntity {
     String getTeacherId() {
         return teacherId;
     }
+
+    String getTeacherName() {
+        return teacherName;
+    }
 }

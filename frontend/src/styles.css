@@ -5,39 +5,49 @@
 }
 
 .student-management { display: grid; gap: 18px; }
-.teaching-management-heading h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; }
+.teaching-management-heading h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; }
 .teaching-management .ant-card { overflow: hidden; }
 .teaching-management .ant-table-wrapper { overflow: hidden; }
-.course-overview-card { min-height: 126px; border-color: #e8edf5; }
-.course-overview-card .ant-card-body { padding: 22px 24px; }
-.course-overview-card .ant-statistic-title { margin-bottom: 10px; color: #7a8799; font-size: 14px; }
-.course-overview-card .ant-statistic-content { font-size: 28px; line-height: 1.2; }
-.course-overview-card .ant-statistic-content-prefix { margin-inline-end: 10px; font-size: 27px; }
-.course-table-actions { min-width: 112px; justify-content: flex-end; }
-.course-management-card .ant-card-head { min-height: 58px; height: auto; }
+.course-overview-card { min-height: 98px; border-color: #e8edf5; }
+.course-overview-card .ant-card-body { padding: 16px 18px; }
+.course-overview-card .ant-statistic-title { margin-bottom: 6px; color: #7a8799; font-size: 13px; }
+.course-overview-card .ant-statistic-content { font-size: 24px; line-height: 1.15; }
+.course-overview-card .ant-statistic-content-prefix { margin-inline-end: 8px; font-size: 23px; }
+.course-table-actions { display: inline-flex; min-width: 0; justify-content: center; white-space: nowrap; }
+.course-management-card .ant-card-head { min-height: 50px; height: auto; padding: 0 18px; }
 .course-management-card .ant-card-head-wrapper { align-items: center; gap: 12px; }
 .course-management-card .ant-card-extra { margin-inline-start: auto; }
-.course-toolbar { display: flex; margin-bottom: 16px; }
+.course-management-card .ant-card-body { padding: 16px 18px; }
+.course-toolbar { display: flex; margin-bottom: 12px; }
 .course-toolbar .ant-input-affix-wrapper { width: min(360px, 100%); }
 .course-toolbar .ant-select { width: 150px; }
-.course-table .ant-table-cell { vertical-align: middle; }
+.course-table .ant-table-cell { padding-top: 10px !important; padding-bottom: 10px !important; vertical-align: middle; }
 .teaching-management .ant-card { overflow: hidden; }
 .teaching-management .ant-table-wrapper { overflow: hidden; }
-.course-table-actions { min-width: 112px; justify-content: flex-end; }
-.course-tasks-page { display: grid; gap: 18px; }
-.course-detail-heading, .course-task-filters, .course-task-item { display: flex; justify-content: space-between; gap: 20px; }
+.course-table-actions { min-width: 0; justify-content: center; }
+.course-tasks-page { display: grid; gap: 12px; }
+.course-detail-heading, .course-task-filters, .course-task-item { display: flex; justify-content: space-between; gap: 16px; }
 .course-detail-heading { align-items: end; }
-.course-detail-heading h2 { margin: 10px 0 4px; }
-.course-task-list .ant-card-body { padding: 0 20px; }
-.course-task-filters { align-items: center; padding: 16px 0; border-bottom: 1px solid #edf1f6; }
+.course-detail-heading h2 { margin: 4px 0 2px; }
+.course-tasks-page > .ant-tabs .ant-tabs-nav { margin-bottom: 12px; }
+.course-task-list .ant-card-head,
+.course-student-card .ant-card-head { min-height: 48px; padding: 0 16px; }
+.course-task-list .ant-card-body,
+.course-student-card .ant-card-body { padding: 0 16px; }
+.course-task-filters { align-items: center; padding: 10px 0; border-bottom: 1px solid #edf1f6; }
 .course-task-search { width: 220px; }
 .course-task-items { display: grid; }
-.course-task-item { align-items: flex-start; padding: 20px 0; border-bottom: 1px solid #edf1f6; }
+.course-task-item { align-items: flex-start; padding: 12px 0; border-bottom: 1px solid #edf1f6; }
 .course-task-item:last-child { border-bottom: 0; }
 .course-task-title { display: flex; align-items: center; gap: 10px; }
 .course-task-title h4 { margin: 0; }
 .course-task-main { flex: 1; min-width: 0; }
-.course-task-main .ant-typography { margin: 12px 0; }
+.course-task-main .ant-typography { margin: 5px 0 0; }
+.task-detail-summary .ant-descriptions-item-content { min-width: 0; }
+.task-detail-text-section { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid #f0f0f0; }
+.task-detail-long-text { width: 100%; max-width: none; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-detail-long-text-collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 8; }
+.task-detail-long-text .ant-btn-link { padding-inline: 6px; vertical-align: baseline; }
 .course-task-attachments { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 12px; }
 .course-task-attachment { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid #e6edf5; border-radius: 4px; background: #f8fafc; }
 .course-task-attachment .ant-btn-link { max-width: min(520px, 62vw); overflow: hidden; text-overflow: ellipsis; }
@@ -50,6 +60,8 @@
 .course-task-side { display: grid; justify-items: end; align-content: space-between; min-width: 250px; }
 .task-statistics { display: flex; gap: 18px; color: #8390a2; font-size: 13px; }
 .task-statistics strong { color: #43526a; }
+.course-student-card .ant-table-cell { padding-top: 10px !important; padding-bottom: 10px !important; }
+.course-student-select { width: 220px; }
 .student-management-heading, .student-management-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
 .student-management-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; }
 .student-group-rail, .student-management-card { border: 1px solid #eaf0f7; border-radius: 8px; background: #fff; }
@@ -581,32 +593,6 @@ input {
   margin-bottom: 18px;
 }
 
-.document-meta {
-  margin-top: 16px;
-}
-
-.document-text-preview {
-  max-height: 520px;
-  margin-bottom: 0 !important;
-  padding: 16px;
-  overflow: auto;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  background: #f7f9fc;
-  border: 1px solid #e8edf3;
-  border-radius: 6px;
-  line-height: 1.7;
-}
-
-.document-heading-list {
-  display: grid;
-  gap: 12px;
-}
-
-.document-table {
-  margin-top: 10px;
-}
-
 .toolbar-row,
 .chart-row {
   width: 100%;
@@ -806,6 +792,29 @@ input {
     padding: 26px 20px;
   }
 }
+.student-task-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.student-course-overview { margin-bottom: 18px; }
+.student-course-row { display: grid; grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #edf1f5; }
+.student-course-row:last-child { border-bottom: 0; }
+.student-course-row .ant-typography { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-course-task-link { display: flex; align-items: center; justify-content: space-between; min-height: 42px; text-align: left; }
+.student-submit-actions { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 56px; }
+.student-submit-actions .ant-typography { margin: 0; }
+.student-upload-staging { margin: 14px 0; padding: 10px 12px; border: 1px dashed #c9d7e8; background: #f8fbff; }
+.student-upload-file-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.student-upload-file-row .ant-typography { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-submission-history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #edf1f5; }
+.student-submission-history-row:last-child { border-bottom: 0; }
+.student-submission-history-row > div { display: grid; gap: 3px; min-width: 0; }
+.student-submission-history-row .ant-btn-link { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-submission-history-item { border-bottom: 1px solid #edf1f5; }
+.student-submission-history-item:last-child { border-bottom: 0; }
+.student-submission-history-item .student-submission-history-row { border-bottom: 0; }
+.student-current-submission { padding: 10px 12px; border-left: 3px solid #1677ff; background: #f5f9ff; }
+.student-history-submission { padding-top: 12px; border-top: 1px solid #edf1f5; }
+.student-submission-section-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.archive-entry-list { display: grid; gap: 6px; max-height: 260px; overflow: auto; }
+.archive-entry-list .ant-typography { overflow-wrap: anywhere; }
 
 .task-workspace {
   display: grid;
@@ -879,6 +888,182 @@ input {
   gap: 14px;
 }
 
+.student-analysis-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.analysis-review-heading {
+  align-items: center;
+}
+
+.analysis-review-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.analysis-review-title .ant-typography {
+  margin: 0;
+}
+
+.analysis-review-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.analysis-job-list-card {
+  position: sticky;
+  top: 12px;
+}
+
+.analysis-job-list-card .ant-card-body {
+  padding: 0;
+}
+
+.analysis-job-list-card .ant-table {
+  font-size: 13px;
+}
+
+.analysis-job-list-card .ant-table-thead {
+  display: none;
+}
+
+.analysis-job-list-card .ant-table-tbody > tr {
+  display: block;
+  cursor: pointer;
+  padding: 8px 12px;
+}
+
+.analysis-job-list-card .ant-table-tbody > tr > td {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: 0;
+}
+
+.analysis-job-list-card .ant-table-tbody > tr > td::before {
+  flex: 0 0 64px;
+  color: #8c8c8c;
+}
+
+.analysis-job-list-card .ant-table-tbody > tr > td:nth-child(1)::before {
+  content: "\4f5c\54c1";
+}
+
+.analysis-job-list-card .ant-table-tbody > tr > td:nth-child(2)::before {
+  content: "\5206\6790\72b6\6001";
+}
+
+.analysis-job-list-card .ant-table-tbody > tr > td:nth-child(3)::before {
+  content: "\5ba1\6838\72b6\6001";
+}
+
+.analysis-job-list-card .ant-table-tbody > tr > td:nth-child(4)::before {
+  content: "\8fdb\5ea6";
+}
+
+.analysis-job-list-card .ant-table-tbody > tr:hover {
+  background: #e6f4ff;
+}
+
+.analysis-review-panel {
+  min-width: 0;
+}
+
+.analysis-review-panel .ant-card-body {
+  padding: 16px 18px 20px;
+}
+
+.analysis-evidence-metadata {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid #d9d9d9;
+  background: #fafafa;
+  color: #434343;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.analysis-evidence-artifact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.analysis-run-progress,
+.analysis-run-trace {
+  width: 100%;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+
+.analysis-visual-gallery {
+  width: 100%;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+
+.analysis-visual-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.analysis-run-progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.analysis-report-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.analysis-report-summary section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analysis-report-summary .analysis-report-table-section {
+  grid-column: 1 / -1;
+}
+
+.analysis-report-table-section .ant-table-wrapper {
+  min-width: 0;
+}
+
+.analysis-report-table-section .ant-table-cell {
+  vertical-align: top;
+}
+
+.analysis-table-wrapped-text {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.analysis-trigger-feedback {
+  display: block;
+  max-width: 190px;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
   .task-workspace-content {
     padding: 12px;
@@ -891,5 +1076,26 @@ input {
 
   .task-analysis-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .student-analysis-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-job-list-card {
+    position: static;
+  }
+
+  .analysis-report-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-review-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .analysis-review-panel .ant-card-body {
+    padding: 14px;
   }
 }
