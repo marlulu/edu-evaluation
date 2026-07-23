@@ -300,6 +300,11 @@ main "$@"
     $scriptPath = Join-Path $OutputDir "$PackageName\deploy-offline.sh"
     $deployScript | Out-File -FilePath $scriptPath -Encoding UTF8
 
+    # 转换为 Unix 换行符 (LF)
+    $content = Get-Content $scriptPath -Raw
+    $content = $content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($scriptPath, $content, [System.Text.UTF8Encoding]::new($false))
+
     Write-Ok "离线部署脚本生成完成"
 }
 
@@ -391,6 +396,11 @@ docker compose logs -f ai-worker   # AI Worker 日志
 
     $readmePath = Join-Path $OutputDir "$PackageName\README.md"
     $readme | Out-File -FilePath $readmePath -Encoding UTF8
+
+    # 转换为 Unix 换行符 (LF)
+    $content = Get-Content $readmePath -Raw
+    $content = $content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($readmePath, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
 # 显示包信息
