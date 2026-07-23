@@ -395,20 +395,27 @@ docker compose logs -f ai-worker   # AI Worker 日志
 function Show-PackageInfo {
     Write-Ok "离线包打包完成！"
     Write-Host ""
-    Write-Info "包位置: $OutputDir\$PackageName"
+
+    # 检查 tar.gz 文件
+    $tarFile = Join-Path $OutputDir "$PackageName.tar.gz"
+    if (Test-Path $tarFile) {
+        $tarSize = (Get-Item $tarFile).Length / 1MB
+        Write-Info "压缩包位置: $tarFile"
+        Write-Info "压缩包大小: $([math]::Round($tarSize, 2)) MB"
+        Write-Host ""
+    }
 
     $packageDir = Join-Path $OutputDir $PackageName
-    $size = (Get-ChildItem -Recurse $packageDir | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Info "包大小: $([math]::Round($size, 2)) MB"
-
-    Write-Host ""
-    Write-Info "包内容:"
-    Get-ChildItem $packageDir | Format-Table Name, @{N='Size';E={if($_.PSIsContainer){''}else{'{0:N2} MB' -f ($_.Length/1MB)}}}
+    Write-Info "目录位置: $OutputDir\$PackageName"
 
     Write-Host ""
     Write-Info "下一步:"
-    Write-Info "  1. 将 $OutputDir\$PackageName 上传到目标服务器"
-    Write-Info "  2. 在服务器上运行: bash deploy-offline.sh --all"
+    if (Test-Path $tarFile) {
+        Write-Info "  1. 将 $tarFile 上传到目标服务器"
+    } else {
+        Write-Info "  1. 将 $OutputDir\$PackageName 目录上传到目标服务器"
+    }
+    Write-Info "  2. 在服务器上解压并运行: bash deploy-offline.sh --all"
 }
 
 # 显示帮助
@@ -457,6 +464,14 @@ function Main {
     Package-Config
     Generate-DeployScript
     Generate-Readme
+
+    # 压缩成 tar.gz
+    Write-Info "正在压缩离线包..."
+    $packageDir = Join-Path $OutputDir $PackageName
+    $tarFile = Join-Path $OutputDir "$PackageName.tar.gz"
+    tar -czf $tarFile -C $OutputDir $PackageName
+    Write-Ok "离线包已生成: $tarFile"
+
     Show-PackageInfo
 }
 
