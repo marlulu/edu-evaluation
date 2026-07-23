@@ -126,8 +126,9 @@ function Package-Config {
 
     # 复制部署配置
     Copy-Item (Join-Path $DeployDir "docker-compose.prod.yml") .
-    Copy-Item (Join-Path $DeployDir ".env.example") ".env.production"
-    if (Test-Path (Join-Path $DeployDir ".env.production")) {
+    if (Test-Path (Join-Path $DeployDir ".env")) {
+        Copy-Item (Join-Path $DeployDir ".env") ".env.production"
+    } elseif (Test-Path (Join-Path $DeployDir ".env.production")) {
         Copy-Item (Join-Path $DeployDir ".env.production") .
     }
     Copy-Item -Recurse (Join-Path $DeployDir "nginx") .

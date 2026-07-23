@@ -122,8 +122,7 @@ package_config() {
 
     # 复制部署配置
     cp "$DEPLOY_DIR/docker-compose.prod.yml" .
-    cp "$DEPLOY_DIR/.env.example" .env.production
-    cp "$DEPLOY_DIR/.env.production" . 2>/dev/null || true
+    cp "$DEPLOY_DIR/.env" .env.production 2>/dev/null || cp "$DEPLOY_DIR/.env.production" .env.production 2>/dev/null || true
     cp -r "$DEPLOY_DIR/nginx" .
     cp -r "$DEPLOY_DIR/mysql" .
     cp -r "$DEPLOY_DIR/scripts" .
