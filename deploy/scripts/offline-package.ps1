@@ -104,18 +104,20 @@ function Package-Code {
     $tarFile = Join-Path $codeDir "edu-evaluation.tar.gz"
 
     # 排除不需要的文件
-    $excludes = @(
-        "--exclude=.git",
-        "--exclude=node_modules",
-        "--exclude=target",
-        "--exclude=__pycache__",
-        "--exclude=.env",
-        "--exclude=*.log",
-        "--exclude=offline-package",
-        "--exclude=infra/.venv"
-    )
-
-    tar -czf $tarFile $excludes .
+    tar -czf $tarFile `
+        --exclude=.git `
+        --exclude=node_modules `
+        --exclude=target `
+        --exclude=__pycache__ `
+        --exclude=.env `
+        --exclude="*.log" `
+        --exclude=offline-package `
+        --exclude=infra/.venv `
+        --exclude=.venv `
+        --exclude=.claude `
+        --exclude=deploy/docker-images `
+        --exclude=".idea" `
+        .
 
     Write-Ok "项目代码打包完成"
 }
