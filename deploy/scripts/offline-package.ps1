@@ -1,6 +1,7 @@
-# ============================================================
+﻿# ============================================================
 #  教育评估系统 — 离线打包脚本 (Windows PowerShell)
-#  用法: .\offline-package.ps1 [-Images|-Code|-All|-Help]
+#  用法: cd deploy; .\scripts\offline-package.ps1 [-Images|-Code|-All|-Help]
+#  必须在 deploy 目录下运行此脚本
 #  在有网络的机器上运行，生成离线部署包
 # ============================================================
 
@@ -25,7 +26,7 @@ $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $PackageName = "edu-evaluation-offline-$Timestamp"
 
 # Docker 镜像列表
-$Images = @(
+$ImageList = @(
     "mysql:8.4",
     "redis:7-alpine",
     "minio/minio:latest",
@@ -62,7 +63,7 @@ function Package-Images {
     $imagesDir = Join-Path $OutputDir "$PackageName\images"
     Set-Location $imagesDir
 
-    foreach ($image in $Images) {
+    foreach ($image in $ImageList) {
         Write-Info "拉取镜像: $image"
         docker pull $image
 
@@ -77,15 +78,16 @@ function Package-Images {
     }
 
     # 生成镜像清单
-    @"
-# 镜像加载顺序（按依赖关系）
-1. mysql:8.4
-2. redis:7-alpine
-3. minio/minio:latest
-4. eclipse-temurin:17-jre-alpine
-5. python:3.11-slim
-6. nginx:alpine
-"@ | Out-File -FilePath "images.txt" -Encoding UTF8
+    $imageList = @(
+        "# 镜像加载顺序（按依赖关系）",
+        "1. mysql:8.4",
+        "2. redis:7-alpine",
+        "3. minio/minio:latest",
+        "4. eclipse-temurin:17-jre-alpine",
+        "5. python:3.11-slim",
+        "6. nginx:alpine"
+    )
+    $imageList -join "`n" | Out-File -FilePath "images.txt" -Encoding UTF8
 
     Write-Ok "Docker 镜像打包完成"
 }
