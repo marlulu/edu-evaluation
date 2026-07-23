@@ -251,6 +251,21 @@ public class CourseService {
         courseRepository.delete(course);
     }
 
+    @Transactional
+    public List<CourseResponse> batchUpdateStatus(List<String> courseIds, CourseStatus targetStatus, AppPrincipal principal) {
+        permissions.require(principal, ModulePermissionService.COURSE, ModuleAction.EDIT);
+        List<CourseResponse> results = new java.util.ArrayList<>();
+        for (String courseId : courseIds) {
+            CourseEntity course = requireCourse(courseId);
+            requireCourseAccess(course, principal);
+            if (isValidTransition(course.getStatus(), targetStatus)) {
+                course.setStatus(targetStatus);
+                results.add(toResponse(courseRepository.save(course)));
+            }
+        }
+        return results;
+    }
+
     private CourseEntity requireCourse(String courseId) {
         return courseRepository.findById(courseId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "课程不存在"));

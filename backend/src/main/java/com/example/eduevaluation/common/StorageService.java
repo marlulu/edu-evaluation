@@ -74,26 +74,6 @@ public class StorageService {
     }
 
     /**
-     * 删除文件
-     *
-     * @param objectName 对象名称
-     */
-    public void deleteFile(String objectName) {
-        try {
-            minioClient.removeObject(
-                    RemoveObjectArgs.builder()
-                            .bucket(properties.getBucket())
-                            .object(objectName)
-                            .build()
-            );
-            log.info("文件已从 MinIO 删除: {}", objectName);
-        } catch (Exception e) {
-            log.error("删除文件失败: {}", e.getMessage(), e);
-            throw new RuntimeException("删除文件失败", e);
-        }
-    }
-
-    /**
      * 检查文件是否存在
      *
      * @param objectName 对象名称

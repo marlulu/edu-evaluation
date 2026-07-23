@@ -1,6 +1,7 @@
-import { DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, SearchOutlined, UploadOutlined, UserAddOutlined } from '@ant-design/icons';
+import { DeleteOutlined, DownloadOutlined, EditOutlined, ExportOutlined, PlusOutlined, SearchOutlined, UploadOutlined, UserAddOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import type { Key } from 'react';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -25,6 +26,7 @@ export function StudentManagement() {
   const [importGroups, setImportGroups] = useState<string[]>([]);
   const [importPreview, setImportPreview] = useState<ImportPreview>();
   const [importing, setImporting] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [messageApi, contextHolder] = message.useMessage();
   const [studentForm] = Form.useForm<StudentForm>();
   const [groupForm] = Form.useForm<{ name: string }>();
@@ -162,6 +164,32 @@ export function StudentManagement() {
     }
   }
 
+  function exportStudents() {
+    const selected = selectedRowKeys.length > 0
+      ? visibleStudents.filter((s) => selectedRowKeys.includes(s.id))
+      : visibleStudents;
+    if (selected.length === 0) {
+      messageApi.warning('没有可导出的学生数据');
+      return;
+    }
+    const header = '学号,姓名,邮箱,组别,初始密码';
+    const rows = selected.map((s) => [
+      s.studentNumber,
+      s.studentName,
+      s.email ?? '',
+      s.groupNames.join(' / '),
+      s.initialPassword ?? ''
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    const csv = `﻿${header}\n${rows.join('\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = selectedRowKeys.length > 0 ? `学生信息（已选${selected.length}人）.csv` : `学生信息（${currentGroup?.name ?? '全部'}）.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    messageApi.success(`已导出 ${selected.length} 名学生信息`);
+  }
+
   const columns: ColumnsType<Student> = [
     { title: '学号', dataIndex: 'studentNumber', width: 150 },
     { title: '姓名', dataIndex: 'studentName', width: 130 },
@@ -176,7 +204,7 @@ export function StudentManagement() {
       {contextHolder}
       <section className="page-heading student-management-heading">
         <div><Tag color="blue">教学管理</Tag><Title level={2}>学生管理</Title><Paragraph type="secondary">共享学生库和自定义组别可直接用于课程成员选择。</Paragraph></div>
-        <Space><Button icon={<DownloadOutlined />} onClick={() => void downloadTemplate()}>下载模板</Button><Button icon={<UploadOutlined />} onClick={() => { setImportPreview(undefined); setImportModalOpen(true); }}>导入 Excel</Button><Button icon={<PlusOutlined />} onClick={() => setGroupModalOpen(true)}>新建组别</Button><Button type="primary" icon={<UserAddOutlined />} onClick={() => openStudent()}>新增学生</Button></Space>
+        <Space><Button icon={<DownloadOutlined />} onClick={() => void downloadTemplate()}>下载模板</Button><Button icon={<UploadOutlined />} onClick={() => { setImportPreview(undefined); setImportModalOpen(true); }}>导入 Excel</Button><Button icon={<ExportOutlined />} onClick={() => void exportStudents()}>{selectedRowKeys.length > 0 ? `导出已选（${selectedRowKeys.length}）` : '导出全部'}</Button><Button icon={<PlusOutlined />} onClick={() => setGroupModalOpen(true)}>新建组别</Button><Button type="primary" icon={<UserAddOutlined />} onClick={() => openStudent()}>新增学生</Button></Space>
       </section>
       <div className="student-management-layout">
         <aside className="student-group-rail">
@@ -191,7 +219,9 @@ export function StudentManagement() {
         </aside>
         <Card className="student-management-card">
           <div className="student-management-toolbar"><Title level={4}>{currentGroup?.name ?? '全部学生'}</Title><Input className="student-search" prefix={<SearchOutlined />} placeholder="搜索姓名、学号或邮箱" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></div>
-          <Table rowKey="id" columns={columns} dataSource={visibleStudents} scroll={{ x: 700 }} pagination={{ pageSize: 8, showSizeChanger: false }} />
+          <Table rowKey="id" columns={columns} dataSource={visibleStudents} scroll={{ x: 700 }} pagination={{ pageSize: 8, showSizeChanger: false }}
+            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, preserveSelectedRowKeys: true }}
+          />
         </Card>
       </div>
       <Modal title={editing ? '编辑学生' : '新增学生'} open={studentModalOpen} onCancel={() => setStudentModalOpen(false)} onOk={() => void saveStudent()}>

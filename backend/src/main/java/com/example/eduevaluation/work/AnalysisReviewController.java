@@ -3,16 +3,24 @@ package com.example.eduevaluation.work;
 import com.example.eduevaluation.auth.AppPrincipal;
 import com.example.eduevaluation.auth.UserRole;
 import com.example.eduevaluation.common.AiWorkerClient;
-import com.example.eduevaluation.classroom.ClassService;
 import com.example.eduevaluation.common.StorageService;
 import com.example.eduevaluation.teaching.CourseTaskService;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.List;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import java.io.ByteArrayOutputStream;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -24,24 +32,34 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/analysis")
 public class AnalysisReviewController {
     private final AiWorkerClient aiWorkerClient;
-    private final ClassService classService;
     private final AnalysisReviewService analysisReviewService;
+    private final AnalysisReviewRepository reviewRepository;
     private final CourseTaskService courseTaskService;
     private final StorageService storageService;
+    private final ObjectMapper objectMapper;
 
-    public AnalysisReviewController(AiWorkerClient aiWorkerClient, ClassService classService,
-            AnalysisReviewService analysisReviewService, CourseTaskService courseTaskService,
-            StorageService storageService) {
+    public AnalysisReviewController(AiWorkerClient aiWorkerClient,
+            AnalysisReviewService analysisReviewService, AnalysisReviewRepository reviewRepository,
+            CourseTaskService courseTaskService, StorageService storageService, ObjectMapper objectMapper) {
         this.aiWorkerClient = aiWorkerClient;
-        this.classService = classService;
         this.analysisReviewService = analysisReviewService;
+        this.reviewRepository = reviewRepository;
         this.courseTaskService = courseTaskService;
         this.storageService = storageService;
+        this.objectMapper = objectMapper;
+    }
+
+    @GetMapping("/tasks")
+    public Map<String, Object> listTasks(@AuthenticationPrincipal AppPrincipal principal) {
+        requireTeachingStaff(principal);
+        List<Map<String, Object>> tasks = courseTaskService.listAnalysisTasks();
+        return Map.of("tasks", tasks);
     }
 
     @GetMapping("/jobs/{jobId}")
@@ -119,24 +137,59 @@ public class AnalysisReviewController {
     @GetMapping("/students/{studentId}/jobs")
     public List<Map<String, Object>> studentJobs(@PathVariable String studentId, @AuthenticationPrincipal AppPrincipal principal) {
         requireTeachingStaff(principal);
-        return classService.getStudentWorks(studentId).stream().map(work -> {
-            Map<String, Object> item = new java.util.LinkedHashMap<>();
-            item.put("jobId", work.getTaskId());
-            item.put("submittedAt", work.getCreatedAt());
-            item.put("fileName", work.getWorkTask() == null ? work.getTaskId() : work.getWorkTask().getFileName());
+        List<AnalysisReviewEntity> reviews = reviewRepository.findByStudentIdOrderByUpdatedAtDesc(studentId);
+        return reviews.stream().map(review -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("jobId", review.getJobId());
+            item.put("submittedAt", review.getUpdatedAt());
+            item.put("fileName", review.getJobId());
             try {
-                Map<String, Object> analysis = aiWorkerClient.analysisJob(work.getTaskId());
+                Map<String, Object> analysis = aiWorkerClient.analysisJob(review.getJobId());
                 item.put("analysis", analysis);
-                item.put("review", analysisReviewService.synchronize(work.getTaskId(), studentId, analysis));
+                item.put("review", analysisReviewService.synchronize(review.getJobId(), studentId, analysis));
             } catch (Exception exception) {
                 item.put("analysis", Map.of("status", "unavailable", "error", "Analysis worker is unavailable"));
-                Map<String, Object> review = analysisReviewService.get(work.getTaskId());
-                if (review != null) {
-                    item.put("review", review);
+                Map<String, Object> cachedReview = analysisReviewService.get(review.getJobId());
+                if (cachedReview != null) {
+                    item.put("review", cachedReview);
                 }
             }
             return item;
         }).toList();
+    }
+
+    @PostMapping("/jobs/export")
+    public ResponseEntity<byte[]> exportJobs(@RequestBody Map<String, List<String>> request,
+            @AuthenticationPrincipal AppPrincipal principal) {
+        requireTeachingStaff(principal);
+        List<String> jobIds = request.get("jobIds");
+        if (jobIds == null || jobIds.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+                for (String jobId : jobIds) {
+                    courseTaskService.requireAnalysisJobAccess(jobId, principal);
+                    Map<String, Object> analysis = aiWorkerClient.analysisJob(jobId);
+                    analysis.put("review", analysisReviewService.synchronize(jobId, null, analysis));
+                    String fileName = jobId + ".json";
+                    zos.putNextEntry(new ZipEntry(fileName));
+                    zos.write(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(analysis));
+                    zos.closeEntry();
+                }
+            }
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            String zipName = "分析报告_" + timestamp + ".zip";
+            String encoded = URLEncoder.encode(zipName, StandardCharsets.UTF_8).replace("+", "%20");
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .body(baos.toByteArray());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     private void requireTeachingStaff(AppPrincipal principal) {

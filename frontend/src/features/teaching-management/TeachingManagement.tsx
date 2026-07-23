@@ -1,10 +1,13 @@
-import { ArrowLeftOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, PaperClipOutlined, PlayCircleOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UploadOutlined, UserAddOutlined } from '@ant-design/icons';
-import { Button, Card, Collapse, DatePicker, Descriptions, Empty, Form, Image, Input, InputNumber, Modal, Popconfirm, Progress, Select, Space, Steps, Table, Tabs, Tag, Timeline, Tooltip, Typography, Upload, message } from 'antd';
+import { ArrowLeftOutlined, BookOutlined, BellOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PaperClipOutlined, PlayCircleOutlined, PlusOutlined, SearchOutlined, StopOutlined, TeamOutlined, UploadOutlined, UserAddOutlined } from '@ant-design/icons';
+import { Button, Card, Checkbox, Collapse, DatePicker, Descriptions, Dropdown, Empty, Form, Image, Input, InputNumber, Modal, Popconfirm, Progress, Select, Space, Spin, Steps, Table, Tabs, Tag, Timeline, Tooltip, Typography, Upload, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import axios from 'axios';
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import CourseManagement from './CourseManagement';
+import { saveNavState, loadNavState, clearNavState } from '../../navigation-state';
+import { FilePreviewModal, isPreviewable, getPreviewCategory } from '../shared/FilePreviewModal';
+import mammoth from 'mammoth';
 
 const { Text, Title } = Typography;
 async function downloadAuthenticatedFile(url: string, fileName: string, apiMessage: { error: (content: string) => void }) {
@@ -41,18 +44,6 @@ type RuleForm = { allowedExtensions: string[]; maxFileSizeMb: number; ruleText: 
 type Student = { id: string; number: string; name: string };
 type StudentGroup = { id: string; name: string; studentCount: number };
 type CourseOptions = { students?: Student[]; groups?: StudentGroup[] };
-type LegacyAnalysisTask = {
-  taskId: string;
-  fileName: string;
-  status: string;
-  progress: number;
-  error?: string;
-  contentAnalysis?: {
-    overallTopic?: string;
-    summary?: string;
-    evaluation?: { totalScore?: number; grade?: string; strengths?: string[]; weaknesses?: string[] };
-  };
-};
 const extensionOptions = ['.pdf', '.docx', '.txt', '.md', '.zip', '.pptx', '.xlsx', '.jpg', '.png', '.mp3', '.mp4'];
 const statusMeta: Record<TaskStatus, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
@@ -61,8 +52,22 @@ const statusMeta: Record<TaskStatus, { label: string; color: string }> = {
 };
 
 export default function TeachingManagement() {
-  const [course, setCourse] = useState<CourseDetail>();
-  return course ? <CourseDetailPage course={course} onBack={() => setCourse(undefined)} /> : (
+  const [course, setCourse] = useState<CourseDetail | undefined>(() => loadNavState<CourseDetail | undefined>('teaching-course', undefined));
+
+  useEffect(() => {
+    if (course) saveNavState('teaching-course', course);
+    else clearNavState('teaching-course');
+  }, [course]);
+
+  function handleBack() {
+    setCourse(undefined);
+    clearNavState('teaching-course');
+    clearNavState('teaching-active-key');
+    clearNavState('teaching-open-tasks');
+    clearNavState('teaching-analysis');
+  }
+
+  return course ? <CourseDetailPage course={course} onBack={handleBack} /> : (
     <div className="teaching-management">
       <div className="teaching-management-heading"><Title level={3}>课程管理</Title></div>
       <CourseManagement onViewTasks={(id, name) => setCourse({ id, name })} />
@@ -71,13 +76,65 @@ export default function TeachingManagement() {
 }
 
 function CourseDetailPage({ course, onBack }: { course: CourseDetail; onBack: () => void }) {
-  const [openTasks, setOpenTasks] = useState<Task[]>([]);
-  const [analysisStudent, setAnalysisStudent] = useState<Student>();
-  const [analysisTaskId, setAnalysisTaskId] = useState<string>();
-  const [analysisJobId, setAnalysisJobId] = useState<string>();
+  const restoredAnalysis = loadNavState<{ student: Student; taskId?: string; jobId?: string } | undefined>('teaching-analysis', undefined);
+  const [openTasks, setOpenTasks] = useState<Task[]>(() => loadNavState<Task[]>('teaching-open-tasks', []));
+  const [analysisStudent, setAnalysisStudent] = useState<Student | undefined>(restoredAnalysis?.student);
+  const [analysisTaskId, setAnalysisTaskId] = useState<string | undefined>(restoredAnalysis?.taskId);
+  const [analysisJobId, setAnalysisJobId] = useState<string | undefined>(restoredAnalysis?.jobId);
   const [analysisVersion, setAnalysisVersion] = useState(0);
-  const [activeKey, setActiveKey] = useState('course');
+  const [activeKey, setActiveKey] = useState(() => loadNavState<string>('teaching-active-key', 'tasks'));
   const [messageApi, contextHolder] = message.useMessage();
+  const tabsRestored = useRef(false);
+
+  // Persist openTasks
+  useEffect(() => {
+    saveNavState('teaching-open-tasks', openTasks);
+  }, [openTasks]);
+
+  // Persist activeKey
+  useEffect(() => {
+    saveNavState('teaching-active-key', activeKey);
+  }, [activeKey]);
+
+  // Persist analysis context
+  useEffect(() => {
+    if (analysisStudent) {
+      saveNavState('teaching-analysis', { student: analysisStudent, taskId: analysisTaskId, jobId: analysisJobId });
+    } else {
+      clearNavState('teaching-analysis');
+    }
+  }, [analysisStudent, analysisTaskId, analysisJobId]);
+
+  // Validate restored activeKey — if it references a tab that no longer exists, fall back
+  useEffect(() => {
+    if (tabsRestored.current) return;
+    tabsRestored.current = true;
+    const courseKeys = ['tasks', 'submissions', 'students', 'attachments'];
+    if (activeKey.startsWith('task-')) {
+      const taskId = activeKey.slice('task-'.length);
+      if (!openTasks.some((t) => t.id === taskId)) setActiveKey('tasks');
+    } else if (activeKey.startsWith('analysis-') && !analysisStudent) {
+      setActiveKey('tasks');
+    } else if (!courseKeys.includes(activeKey) && !activeKey.startsWith('task-') && !activeKey.startsWith('analysis-')) {
+      setActiveKey('tasks');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build all tab keys for adjacent-tab logic
+  function allTabKeys(): string[] {
+    const keys = ['tasks', 'submissions', 'students', 'attachments'];
+    openTasks.forEach((t) => keys.push(`task-${t.id}`));
+    if (analysisStudent) keys.push(`analysis-${analysisStudent.id}`);
+    return keys;
+  }
+
+  function switchToAdjacentTab(closedKey: string) {
+    const allKeys = allTabKeys();
+    const closedIdx = allKeys.indexOf(closedKey);
+    // Prefer the left neighbor; fall back to right neighbor
+    const target = (closedIdx > 0 ? allKeys[closedIdx - 1] : allKeys[closedIdx + 1]) ?? 'tasks';
+    setActiveKey(target);
+  }
 
   function openTask(task: Task) {
     const tabKey = `task-${task.id}`;
@@ -94,8 +151,9 @@ function CourseDetailPage({ course, onBack }: { course: CourseDetail; onBack: ()
   }
 
   function closeTaskTab(taskId: string) {
+    const tabKey = `task-${taskId}`;
     setOpenTasks((items) => items.filter((item) => item.id !== taskId));
-    if (activeKey === `task-${taskId}`) setActiveKey('course');
+    if (activeKey === tabKey) switchToAdjacentTab(tabKey);
   }
 
   function openAnalysis(student: Student, taskId?: string, jobId?: string) {
@@ -107,54 +165,86 @@ function CourseDetailPage({ course, onBack }: { course: CourseDetail; onBack: ()
   }
 
   function closeAnalysisTab() {
+    const tabKey = `analysis-${analysisStudent?.id}`;
     setAnalysisStudent(undefined);
     setAnalysisTaskId(undefined);
     setAnalysisJobId(undefined);
-    setActiveKey('course');
+    if (activeKey === tabKey) switchToAdjacentTab(tabKey);
   }
+
+  const navItems = [
+    { key: 'tasks', icon: <BookOutlined />, label: '作业详情' },
+    { key: 'submissions', icon: <UploadOutlined />, label: '提交作业' },
+    { key: 'students', icon: <TeamOutlined />, label: '学生名单' },
+    { key: 'attachments', icon: <PaperClipOutlined />, label: '课程附件' },
+  ];
+  const dynamicTabs = [
+    ...openTasks.map((task) => ({ key: `task-${task.id}`, label: task.title })),
+    ...(analysisStudent ? [{ key: `analysis-${analysisStudent.id}`, label: `作业详情：${analysisStudent.name}` }] : []),
+  ];
+
+  function renderContent() {
+    switch (activeKey) {
+      case 'tasks': return <CourseTasks course={course} onOpenTask={openTask} />;
+      case 'submissions': return <CourseSubmissions courseId={course.id} onOpenAnalysis={openAnalysis} />;
+      case 'students': return <CourseStudents courseId={course.id} />;
+      case 'attachments': return <CourseAttachments courseId={course.id} />;
+      default: {
+        if (activeKey.startsWith('task-')) {
+          const task = openTasks.find((t) => `task-${t.id}` === activeKey);
+          return task ? <TaskDetail courseId={course.id} task={task} onOpenAnalysis={openAnalysis} /> : null;
+        }
+        if (activeKey.startsWith('analysis-') && analysisStudent) {
+          return <AnalysisReviewWorkspace key={`${analysisStudent.id}-${analysisTaskId ?? 'legacy'}-${analysisVersion}`} student={analysisStudent} taskId={analysisTaskId} initialJobId={analysisJobId} />;
+        }
+        return null;
+      }
+    }
+  }
+
+  const isCourseNav = navItems.some((item) => item.key === activeKey);
+  const showTabBar = !isCourseNav && dynamicTabs.length > 0;
 
   return <div className="course-tasks-page">
     {contextHolder}
     <section className="course-detail-heading">
-      <div><Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack}>返回课程</Button><Title level={2}>{course.name}</Title><Text type="secondary">课程作业与学生名单</Text></div>
+      <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack}>返回课程</Button>
+      <div className="course-detail-heading-sep" />
+      <Text strong className="course-detail-heading-name">{course.name}</Text>
     </section>
-    <Tabs
-      activeKey={activeKey}
-      onChange={setActiveKey}
-      type={openTasks.length || analysisStudent ? 'editable-card' : 'line'}
-      hideAdd
-      onEdit={(targetKey, action) => {
-        if (action === 'remove' && typeof targetKey === 'string' && targetKey.startsWith('task-')) {
-          closeTaskTab(targetKey.slice('task-'.length));
-        }
-        if (action === 'remove' && typeof targetKey === 'string' && targetKey.startsWith('analysis-')) {
-          closeAnalysisTab();
-        }
-      }}
-      items={[
-        {
-          key: 'course',
-          label: `课程：${course.name}`,
-          closable: false,
-          children: <Tabs items={[
-            { key: 'tasks', label: '作业详情', children: <CourseTasks course={course} onOpenTask={openTask} /> },
-            { key: 'submissions', label: '提交作业', children: <CourseSubmissions courseId={course.id} onOpenAnalysis={openAnalysis} /> },
-            { key: 'attachments', label: '课程附件', children: <CourseAttachments courseId={course.id} /> },
-            { key: 'students', label: '学生名单', children: <CourseStudents courseId={course.id} /> }
-          ]} />
-        },
-        ...openTasks.map((task) => ({
-          key: `task-${task.id}`,
-          label: `作业：${task.title}`,
-          children: <TaskDetail courseId={course.id} task={task} onOpenAnalysis={openAnalysis} />
-        })),
-        ...(analysisStudent ? [{
-          key: `analysis-${analysisStudent.id}`,
-          label: `智能分析：${analysisStudent.name}`,
-          children: <AnalysisReviewWorkspace key={`${analysisStudent.id}-${analysisTaskId ?? 'legacy'}-${analysisVersion}`} student={analysisStudent} taskId={analysisTaskId} initialJobId={analysisJobId} />
-        }] : [])
-      ]}
-    />
+    <div className="course-detail-layout">
+      <nav className="course-sidebar">
+        <div className="course-sidebar-nav">
+          <Text type="secondary" className="course-sidebar-section-title">课程管理</Text>
+          {navItems.map((item) => <Button key={item.key} type="text" block className={`course-sidebar-link${activeKey === item.key ? ' active' : ''}`} icon={item.icon} onClick={() => setActiveKey(item.key)}>{item.label}</Button>)}
+        </div>
+        {dynamicTabs.length > 0 && <div className="course-sidebar-nav">
+          <div className="course-sidebar-divider" />
+          <Text type="secondary" className="course-sidebar-section-title">已打开</Text>
+          {dynamicTabs.map((tab) => <div key={tab.key} className="course-sidebar-tab">
+            <Button type="text" block className={`course-sidebar-link${activeKey === tab.key ? ' active' : ''}`} onClick={() => setActiveKey(tab.key)}>
+              {tab.key.startsWith('task-') ? <FileTextOutlined /> : <SearchOutlined />}<span className="course-sidebar-tab-label">{tab.label}</span>
+            </Button>
+            <Button type="text" size="small" className="course-sidebar-close" icon={<CloseOutlined />} onClick={() => { if (tab.key.startsWith('task-')) closeTaskTab(tab.key.slice('task-'.length)); else closeAnalysisTab(); }} />
+          </div>)}
+        </div>}
+        <div className="course-sidebar-spacer" />
+        <div className="course-sidebar-divider" />
+        <CourseOverviewSidebar courseId={course.id} />
+      </nav>
+      <main className="course-detail-main">
+        {showTabBar && <div className="course-content-tabs">
+          {dynamicTabs.map((tab) => <button key={tab.key} className={`course-content-tab${activeKey === tab.key ? ' active' : ''}`} onClick={() => setActiveKey(tab.key)}>
+            {tab.key.startsWith('task-') ? <FileTextOutlined /> : <SearchOutlined />}
+            <span>{tab.label}</span>
+            <CloseOutlined className="course-content-tab-close" onClick={(e) => { e.stopPropagation(); if (tab.key.startsWith('task-')) closeTaskTab(tab.key.slice('task-'.length)); else closeAnalysisTab(); }} />
+          </button>)}
+        </div>}
+        <div className="course-content-body">
+          {renderContent()}
+        </div>
+      </main>
+    </div>
   </div>;
 }
 
@@ -181,11 +271,35 @@ function CourseAttachments({ courseId }: { courseId: string }) {
 
 type SubmissionRecord = { id: string; studentId: string; submissionBatchId: string; fileName: string; submittedAt: string; downloadUrl: string; analysisJobId?: string | null };
 
+function CourseOverviewSidebar({ courseId }: { courseId: string }) {
+  const [stats, setStats] = useState<{ tasks: number; students: number; attachments: number }>({ tasks: 0, students: 0, attachments: 0 });
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      axios.get<Task[]>(`/api/courses/${courseId}/tasks`),
+      axios.get<Student[]>(`/api/courses/${courseId}/students`),
+      axios.get<CourseAttachment[]>(`/api/courses/${courseId}/attachments`)
+    ]).then(([tasks, students, attachments]) => {
+      if (active) setStats({ tasks: tasks.data.length, students: students.data.length, attachments: attachments.data.length });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [courseId]);
+
+  return <Card size="small" title="课程概览" className="course-overview-sidebar">
+    <div className="course-overview-stat"><Text type="secondary">作业</Text><Text strong>{stats.tasks}</Text></div>
+    <div className="course-overview-stat"><Text type="secondary">学生</Text><Text strong>{stats.students}</Text></div>
+    <div className="course-overview-stat"><Text type="secondary">附件</Text><Text strong>{stats.attachments}</Text></div>
+  </Card>;
+}
+
 function CourseSubmissions({ courseId, onOpenAnalysis }: { courseId: string; onOpenAnalysis: (student: Student, taskId?: string, jobId?: string) => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [recordsByTask, setRecordsByTask] = useState<Record<string, SubmissionRecord[]>>({});
   const [loading, setLoading] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewFileName, setPreviewFileName] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
 
   const load = useCallback(async () => {
@@ -223,7 +337,7 @@ function CourseSubmissions({ courseId, onOpenAnalysis }: { courseId: string; onO
       { title: '姓名', dataIndex: 'name', width: 130, render: (name, student) => <Button type="link" onClick={() => onOpenAnalysis(student, taskId)}>{name}</Button> },
       { title: '提交状态', width: 120, render: (_, student) => latestByStudent.has(student.id) ? <Tag color="green">已提交</Tag> : <Tag>未提交</Tag> },
       { title: '最近提交', render: (_, student) => { const record = latestByStudent.get(student.id); return record ? new Date(record.submittedAt).toLocaleString() : '-'; } },
-      { title: '最新作业', render: (_, student) => { const record = latestByStudent.get(student.id); return record ? <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => void downloadAuthenticatedFile(record.downloadUrl, record.fileName, messageApi)}>{record.fileName}</Button> : '-'; } },
+      { title: '最新作业', render: (_, student) => { const record = latestByStudent.get(student.id); return record ? <Space size={4}>{isPreviewable(record.fileName) && <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => { setPreviewId(record.id); setPreviewFileName(record.fileName); setPreviewOpen(true); }}>预览</Button>}<Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => void downloadAuthenticatedFile(record.downloadUrl, record.fileName, messageApi)}>{record.fileName}</Button></Space> : '-'; } },
       { title: '提交次数', width: 100, render: (_, student) => new Set(records.filter((record) => record.studentId === student.id).map((record) => record.submissionBatchId)).size },
       { title: '智能分析', width: 150, render: (_, student) => {
         const submitted = latestByStudent.has(student.id);
@@ -234,6 +348,7 @@ function CourseSubmissions({ courseId, onOpenAnalysis }: { courseId: string; onO
 
   return <Card className="course-student-card" size="small" title="提交作业">
     {contextHolder}
+    <FilePreviewModal open={previewOpen} onClose={() => setPreviewOpen(false)} submissionId={previewId} fileName={previewFileName} />
     {tasks.length === 0 ? <Empty description="暂无课程作业" /> : <Collapse onChange={(keys) => { const activeKeys = Array.isArray(keys) ? keys : [keys]; const taskId = String(activeKeys[activeKeys.length - 1] ?? ''); if (taskId) void loadRecords(taskId); }} items={tasks.map((task) => ({
       key: task.id,
       label: task.title,
@@ -241,6 +356,8 @@ function CourseSubmissions({ courseId, onOpenAnalysis }: { courseId: string; onO
     }))} />}
   </Card>;
 }
+
+const RUNNING_STATUSES = new Set(['queued', 'extracting', 'running', 'transcribing']);
 
 function AnalysisTriggerButton({ taskId, studentId, submitted, hasExistingAnalysis = false, onStarted }: {
   taskId: string;
@@ -251,14 +368,26 @@ function AnalysisTriggerButton({ taskId, studentId, submitted, hasExistingAnalys
 }) {
   const [starting, setStarting] = useState(false);
   const [jobId, setJobId] = useState<string>();
+  const [running, setRunning] = useState(hasExistingAnalysis);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string }>();
   const [messageApi, contextHolder] = message.useMessage();
+
+  useEffect(() => {
+    if (!hasExistingAnalysis) return;
+    let active = true;
+    void axios.get<{ status: string }>(`/api/tasks/${taskId}/students/${studentId}/analysis`, { timeout: 5000 })
+      .then((res) => { if (active) setRunning(RUNNING_STATUSES.has(res.data.status)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [hasExistingAnalysis, taskId, studentId]);
+
   async function start() {
     setStarting(true);
     setFeedback(undefined);
     try {
       const response = await axios.post<{ jobId: string; fileCount: number }>(`/api/tasks/${taskId}/students/${studentId}/analysis`);
       setJobId(response.data.jobId);
+      setRunning(true);
       const text = `已创建任务，分析 ${response.data.fileCount} 个文件`;
       setFeedback({ type: 'success', text });
       messageApi.success(text);
@@ -273,8 +402,12 @@ function AnalysisTriggerButton({ taskId, studentId, submitted, hasExistingAnalys
       setStarting(false);
     }
   }
+
+  const disabled = !submitted || running;
+  const label = running ? '分析中...' : (jobId || hasExistingAnalysis ? '重新分析' : '开始分析');
+
   return <>{contextHolder}<Space direction="vertical" size={3}>
-    <Button size="small" icon={<PlayCircleOutlined />} disabled={!submitted} loading={starting} onClick={() => void start()}>{jobId || hasExistingAnalysis ? '重新分析' : '开始分析'}</Button>
+    <Button size="small" icon={<PlayCircleOutlined />} disabled={disabled} loading={starting} onClick={() => void start()}>{label}</Button>
     {feedback && <Text type={feedback.type === 'error' ? 'danger' : 'success'} className="analysis-trigger-feedback">{feedback.text}</Text>}
   </Space></>;
 }
@@ -287,6 +420,9 @@ function TaskSubmissionTable({ courseId, taskId, onOpenAnalysis }: {
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewFileName, setPreviewFileName] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
 
   const load = useCallback(async () => {
@@ -317,27 +453,16 @@ function TaskSubmissionTable({ courseId, taskId, onOpenAnalysis }: {
     { title: '姓名', dataIndex: 'name', width: 140, render: (name, student) => <Button type="link" onClick={() => onOpenAnalysis(student, taskId)}>{name}</Button> },
     { title: '提交状态', width: 110, render: (_, student) => latestByStudent.has(student.id) ? <Tag color="green">已提交</Tag> : <Tag>未提交</Tag> },
     { title: '最近提交', render: (_, student) => { const record = latestByStudent.get(student.id); return record ? new Date(record.submittedAt).toLocaleString() : '-'; } },
-    { title: '最新作业', render: (_, student) => { const record = latestByStudent.get(student.id); return record ? <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => void downloadAuthenticatedFile(record.downloadUrl, record.fileName, messageApi)}>{record.fileName}</Button> : '-'; } },
+    { title: '最新作业', render: (_, student) => { const record = latestByStudent.get(student.id); return record ? <Space size={4}>{isPreviewable(record.fileName) && <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => { setPreviewId(record.id); setPreviewFileName(record.fileName); setPreviewOpen(true); }}>预览</Button>}<Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => void downloadAuthenticatedFile(record.downloadUrl, record.fileName, messageApi)}>{record.fileName}</Button></Space> : '-'; } },
     { title: '提交次数', width: 100, render: (_, student) => new Set(records.filter((record) => record.studentId === student.id).map((record) => record.submissionBatchId)).size },
     { title: '智能分析', width: 150, render: (_, student) => <AnalysisTriggerButton taskId={taskId} studentId={student.id} submitted={latestByStudent.has(student.id)} hasExistingAnalysis={Boolean(latestByStudent.get(student.id)?.analysisJobId)} onStarted={(jobId) => onOpenAnalysis(student, taskId, jobId)} /> }
   ];
 
   return <Card className="task-detail-summary" size="small" title="学生提交情况">
     {contextHolder}
+    <FilePreviewModal open={previewOpen} onClose={() => setPreviewOpen(false)} submissionId={previewId} fileName={previewFileName} />
     <Table<Student> size="small" rowKey="id" loading={loading} dataSource={students} columns={columns} locale={{ emptyText: <Empty description="暂无课程学生" /> }} pagination={{ pageSize: 8, showSizeChanger: false }} />
   </Card>;
-}
-
-type AnalysisJobRow = { jobId: string; fileName: string; submittedAt: string; analysis: { status: string; progress?: number; assessment_report?: Record<string, unknown>; trace?: Array<{ stage: string; status: string; response_summary?: string }> } };
-function StudentAnalysisPage({ student }: { student: Student }) {
-  const [jobs, setJobs] = useState<AnalysisJobRow[]>([]);
-  const [selected, setSelected] = useState<AnalysisJobRow>();
-  const [loading, setLoading] = useState(false);
-  const [messageApi, contextHolder] = message.useMessage();
-  const load = useCallback(async () => { setLoading(true); try { const data = (await axios.get<AnalysisJobRow[]>(`/api/analysis/students/${student.id}/jobs`)).data; setJobs(data); setSelected((current) => data.find((item) => item.jobId === current?.jobId) ?? data[0]); } catch { messageApi.error('分析作业加载失败'); } finally { setLoading(false); } }, [student.id, messageApi]);
-  useEffect(() => { void load(); }, [load]);
-  const report = selected?.analysis.assessment_report;
-  return <div className="course-tasks-page">{contextHolder}<section className="course-detail-heading"><Title level={3}>{student.name}的分析审核</Title><Button onClick={() => void load()} loading={loading}>刷新</Button></section><div className="student-analysis-workspace"><Card size="small" title="分析作业"><Table<AnalysisJobRow> rowKey="jobId" size="small" loading={loading} dataSource={jobs} pagination={false} onRow={(row) => ({ onClick: () => setSelected(row) })} columns={[{ title: '作品', dataIndex: 'fileName' }, { title: '状态', render: (_, row) => <Tag>{row.analysis.status}</Tag> }, { title: '进度', render: (_, row) => `${row.analysis.progress ?? 0}%` }]} /></Card><Card size="small" title="待教师审核">{selected ? <Space direction="vertical" className="full-width"><Descriptions size="small" column={2}><Descriptions.Item label="作品" span={2}>{selected.fileName}</Descriptions.Item><Descriptions.Item label="状态">{selected.analysis.status}</Descriptions.Item><Descriptions.Item label="AI参考分">{String(report?.aiQualityReferenceScore ?? '-')}</Descriptions.Item><Descriptions.Item label="规则计算分">{String(report?.ruleScore ?? '-')}</Descriptions.Item><Descriptions.Item label="完整性">{String((report?.completeness as { complete?: boolean } | undefined)?.complete ?? '-')}</Descriptions.Item></Descriptions><Text>{String(report?.rawText ?? '')}</Text><Text type="secondary">运行阶段：{selected.analysis.trace?.map((item) => `${item.stage}:${item.status}`).join(' -> ')}</Text></Space> : <Empty description="暂无分析作业" />}</Card></div></div>;
 }
 
 type PersistedAnalysisReview = {
@@ -445,11 +570,32 @@ function queuedAnalysisJob(jobId: string): ReviewAnalysisJobRow {
   };
 }
 
+function exportAnalysisReport(job: ReviewAnalysisJobRow) {
+  const data = JSON.stringify({ jobId: job.jobId, fileName: job.fileName, analysis: job.analysis, review: job.review }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `分析报告_${job.fileName}_${job.jobId.slice(0, 8)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function loadCourseAnalysis(
     taskId: string, studentId: string, preferredJobId?: string): Promise<ReviewAnalysisJobRow[]> {
   try {
     const jobId = preferredJobId ?? (await axios.get<{ jobId: string }>(
       `/api/tasks/${taskId}/students/${studentId}/analysis`, { timeout: 8000 })).data.jobId;
+    if (!jobId) return [];
     const response = await axios.get<ReviewAnalysisJobRow['analysis'] & { review?: PersistedAnalysisReview }>(
       `/api/analysis/jobs/${jobId}`, { timeout: 8000 }
     );
@@ -469,6 +615,50 @@ async function loadCourseAnalysis(
   }
 }
 
+function InlineFilePreview({ submissionId, fileName, archiveEntry }: { submissionId: string; fileName: string; archiveEntry?: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [docxHtml, setDocxHtml] = useState<string | null>(null);
+  const category = getPreviewCategory(archiveEntry ?? fileName);
+
+  useEffect(() => {
+    if (!submissionId) return;
+    setLoading(true); setError(null); setBlobUrl(null); setTextContent(null); setDocxHtml(null);
+    const url = archiveEntry
+      ? `/api/submissions/${submissionId}/archive-preview?entry=${encodeURIComponent(archiveEntry)}`
+      : `/api/submissions/${submissionId}/preview`;
+    axios.get(url, { responseType: 'blob' })
+      .then(async (res) => {
+        const blob = res.data as Blob;
+        const objectUrl = URL.createObjectURL(blob);
+        setBlobUrl(objectUrl);
+        if (category === 'text') {
+          try { setTextContent(await blob.text()); } catch { setError('文本读取失败'); }
+        } else if (category === 'word') {
+          try { const buf = await blob.arrayBuffer(); setDocxHtml((await mammoth.convertToHtml({ arrayBuffer: buf })).value); } catch { setError('Word 文档解析失败'); }
+        }
+      })
+      .catch(() => setError('文件加载失败'))
+      .finally(() => setLoading(false));
+  }, [submissionId, archiveEntry, category]);
+
+  if (loading) return <div className="file-preview-loading"><Spin tip="加载中..." /></div>;
+  if (error) return <Empty description={error} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  if (!blobUrl) return null;
+
+  switch (category) {
+    case 'image': return <img className="file-preview-image" src={blobUrl} alt={fileName} />;
+    case 'video': return <video controls className="file-preview-media" src={blobUrl} />;
+    case 'audio': return <div className="file-preview-audio-wrapper"><audio controls src={blobUrl} /></div>;
+    case 'pdf': return <iframe className="file-preview-iframe" src={blobUrl} title={fileName} />;
+    case 'word': return docxHtml ? <div className="file-preview-docx" dangerouslySetInnerHTML={{ __html: docxHtml }} /> : <Spin tip="解析中..." />;
+    case 'text': return textContent !== null ? <pre className="file-preview-text">{textContent}</pre> : <Spin tip="读取中..." />;
+    default: return <Empty description="该文件类型不支持预览" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  }
+}
+
 function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
   student: Student;
   taskId?: string;
@@ -479,10 +669,22 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
   const [loading, setLoading] = useState(false);
   const [activeJobId, setActiveJobId] = useState(initialJobId);
   const [loadError, setLoadError] = useState<string>();
+  const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ruleScore, setRuleScore] = useState<number | null>();
   const [qualityScore, setQualityScore] = useState<number | null>();
   const [comment, setComment] = useState('');
+  const [activeTab, setActiveTab] = useState<string>(() => loadNavState<string>('analysis-review-tab', 'detail'));
+  const [teacherComments, setTeacherComments] = useState<Array<{ id: string; authorRole: string; authorName: string; content: string; createdAt: string; attachmentFileName: string | null; attachmentUrl: string | null }>>([]);
+  const [teacherCommentsLoading, setTeacherCommentsLoading] = useState(false);
+  const [teacherCommentText, setTeacherCommentText] = useState('');
+  const [teacherCommentFile, setTeacherCommentFile] = useState<File | null>(null);
+  const [sendingTeacherComment, setSendingTeacherComment] = useState(false);
+  const [submissionHistory, setSubmissionHistory] = useState<Array<{ id: string; fileName: string; submittedAt: string; downloadUrl: string; archiveEntries: string[] }>>([]);
+  const [subHistoryLoading, setSubHistoryLoading] = useState(false);
+  const [inlinePreviewFile, setInlinePreviewFile] = useState<typeof submissionHistory[number] | null>(null);
+  const [inlinePreviewEntry, setInlinePreviewEntry] = useState<string | undefined>(undefined);
   const [messageApi, contextHolder] = message.useMessage();
 
   const load = useCallback(async (silent = false) => {
@@ -523,8 +725,59 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
     setComment(selected?.review?.comment ?? '');
   }, [selected?.jobId, selected?.review]);
 
+  // 保存标签页状态
+  useEffect(() => {
+    saveNavState('analysis-review-tab', activeTab);
+  }, [activeTab]);
+
+  // Load teacher comments when taskId is available
+  useEffect(() => {
+    if (!taskId) return;
+    setTeacherCommentsLoading(true);
+    axios.get<Array<{ id: string; authorRole: string; authorName: string; content: string; createdAt: string; attachmentFileName: string | null; attachmentUrl: string | null }>>(`/api/tasks/${taskId}/students/${student.id}/comments`)
+      .then((res) => setTeacherComments(res.data))
+      .catch(() => {})
+      .finally(() => setTeacherCommentsLoading(false));
+  }, [taskId, student.id]);
+
+  // Load submission history when taskId is available
+  useEffect(() => {
+    if (!taskId) return;
+    setSubHistoryLoading(true);
+    axios.get<Array<{ id: string; submittedAt: string; files: Array<{ id: string; fileName: string; submittedAt: string; downloadUrl: string; archiveEntries: string[] }> }>>(`/api/tasks/${taskId}/students/${student.id}/submissions`)
+      .then((res) => {
+        const files = res.data.flatMap((batch) => batch.files);
+        setSubmissionHistory(files);
+        if (files.length > 0) {
+          const latest = files[0];
+          const firstPreviewable = (latest.archiveEntries ?? []).find((e) => isPreviewable(e.split('/').pop() ?? e));
+          setInlinePreviewEntry(firstPreviewable);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSubHistoryLoading(false));
+  }, [taskId, student.id]);
+
+  async function sendTeacherComment() {
+    if (!taskId || !teacherCommentText.trim()) return;
+    setSendingTeacherComment(true);
+    try {
+      const form = new FormData();
+      form.append('content', teacherCommentText.trim());
+      if (teacherCommentFile) form.append('file', teacherCommentFile);
+      const res = await axios.post<{ id: string; authorRole: string; authorName: string; content: string; createdAt: string; attachmentFileName: string | null; attachmentUrl: string | null }>(`/api/tasks/${taskId}/students/${student.id}/comments`, form);
+      setTeacherComments((prev) => [...prev, res.data]);
+      setTeacherCommentText('');
+      setTeacherCommentFile(null);
+    } catch {
+      messageApi.error('回复发送失败');
+    } finally {
+      setSendingTeacherComment(false);
+    }
+  }
+
   async function save(publish: boolean) {
-    if (!selected?.review) return;
+    if (!selected) return;
     setSaving(true);
     try {
       const revised = (await axios.put<PersistedAnalysisReview>(`/api/analysis/jobs/${selected.jobId}/review`, {
@@ -538,8 +791,11 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
       setJobs((items) => items.map((item) => item.jobId === selected.jobId ? { ...item, review } : item));
       setSelected((item) => item ? { ...item, review } : item);
       messageApi.success(publish ? '审核结果已发布' : '审核修改已保存');
-    } catch {
-      messageApi.error(publish ? '审核结果发布失败' : '审核修改保存失败');
+    } catch (error) {
+      const detail = axios.isAxiosError(error) && typeof error.response?.data?.message === 'string'
+        ? error.response.data.message
+        : publish ? '审核结果发布失败' : '审核修改保存失败';
+      messageApi.error(detail);
     } finally {
       setSaving(false);
     }
@@ -557,6 +813,24 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
       messageApi.error('停止分析任务失败');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function batchExport() {
+    if (selectedJobIds.length === 0) {
+      messageApi.warning('请先选择要导出的分析作业');
+      return;
+    }
+    setExporting(true);
+    try {
+      const response = await axios.post('/api/analysis/jobs/export', { jobIds: selectedJobIds }, { responseType: 'blob' });
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '').replace('T', '_');
+      downloadBlob(response.data as Blob, `分析报告_${student.name}_${timestamp}.zip`);
+      messageApi.success(`已导出 ${selectedJobIds.length} 份分析报告`);
+    } catch {
+      messageApi.error('批量导出失败');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -603,9 +877,11 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
     <section className="course-detail-heading analysis-review-heading">
       <div className="analysis-review-title">
         <Text type="secondary">学生作业</Text>
-        <Title level={3}>{student.name}的分析审核</Title>
+        <Title level={3}>{student.name}的作业详情</Title>
       </div>
       <Space className="analysis-review-actions" wrap>
+        {selected && <Button icon={<DownloadOutlined />} onClick={() => exportAnalysisReport(selected)}>导出当前</Button>}
+        {selectedJobIds.length > 0 && <Button icon={<DownloadOutlined />} loading={exporting} onClick={() => void batchExport()}>批量导出 ({selectedJobIds.length})</Button>}
         <Button onClick={() => void load()} loading={loading}>刷新</Button>
         {selected && !analysisComplete && <Popconfirm
           title="确定强制停止当前分析吗？"
@@ -619,13 +895,17 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
       </Space>
     </section>
     <div className="student-analysis-workspace">
-      <Card size="small" title="分析作业" className="analysis-job-list-card">
+      <Card size="small" title={<Space>分析作业{selectedJobIds.length > 0 && <Tag color="blue">已选 {selectedJobIds.length} 项</Tag>}</Space>} className="analysis-job-list-card">
         <Table<ReviewAnalysisJobRow>
           rowKey="jobId"
           size="small"
           loading={loading}
           dataSource={jobs}
           pagination={false}
+          rowSelection={{
+            selectedRowKeys: selectedJobIds,
+            onChange: (keys) => setSelectedJobIds(keys as string[]),
+          }}
           onRow={(row) => ({ onClick: () => setSelected(row) })}
           columns={[
             { title: '作品', dataIndex: 'fileName' },
@@ -635,16 +915,87 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
           ]}
         />
       </Card>
-      <Card size="small" title="教师审核" className="analysis-review-panel">
+      <Card size="small" title="作业详情" className="analysis-review-panel">
         {loadError && <Text type="warning">{loadError}</Text>}
-        {selected ? <Space direction="vertical" size={12} className="full-width">
-          <Descriptions size="small" column={1}>
-            <Descriptions.Item label="作品">{selected.fileName}</Descriptions.Item>
-            <Descriptions.Item label="AI参考分">{report?.aiQualityReferenceScore == null ? '未生成' : String(report.aiQualityReferenceScore)}</Descriptions.Item>
-            <Descriptions.Item label="规则计算分">{report?.ruleScore == null ? '未生成' : String(report.ruleScore)}</Descriptions.Item>
-            <Descriptions.Item label="完整性">{String((report?.completeness as { complete?: boolean } | undefined)?.complete ?? '-')}</Descriptions.Item>
-            <Descriptions.Item label="审核状态">{selected.review?.status ?? '等待报告'}</Descriptions.Item>
-          </Descriptions>
+        <Space direction="vertical" size={12} className="full-width">
+          {selected && <>
+            {/* ── Top fixed: scoring & review ── */}
+            <Descriptions size="small" column={1}>
+              <Descriptions.Item label="作品">{selected.fileName}</Descriptions.Item>
+              <Descriptions.Item label="AI参考分">{report?.aiQualityReferenceScore == null ? '未生成' : String(report.aiQualityReferenceScore)}</Descriptions.Item>
+              <Descriptions.Item label="规则计算分">{report?.ruleScore == null ? '未生成' : String(report.ruleScore)}</Descriptions.Item>
+              <Descriptions.Item label="完整性">{String((report?.completeness as { complete?: boolean } | undefined)?.complete ?? '-')}</Descriptions.Item>
+              <Descriptions.Item label="审核状态">{selected.review?.status ?? '等待报告'}</Descriptions.Item>
+            </Descriptions>
+            {selected.review && <><Space wrap>
+              <Space><Text>规则得分</Text><InputNumber min={0} max={100} precision={2} value={ruleScore} onChange={setRuleScore} /></Space>
+              <Space><Text>AI参考分</Text><InputNumber min={0} max={100} precision={2} value={qualityScore} onChange={setQualityScore} /></Space>
+            </Space>
+            <Input.TextArea rows={3} maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="填写教师审核意见" />
+            <Space>
+              <Button loading={saving} onClick={() => void save(false)}>保存审核</Button>
+              <Button type="primary" loading={saving} disabled={selected.review.status === 'PUBLISHED'} onClick={() => void save(true)}>发布结果</Button>
+            </Space></>}
+          </>}
+          {/* ── Tabs: detail / analysis ── */}
+          <Tabs activeKey={selected ? activeTab : 'detail'} onChange={setActiveTab} items={[
+            {
+              key: 'detail',
+              label: '作业详情',
+              children: <Space direction="vertical" size={12} className="full-width">
+                <section>
+                  <Text strong>提交文件</Text>
+                  {subHistoryLoading ? <Text type="secondary">加载中...</Text> : submissionHistory.length
+                    ? (() => { const latest = submissionHistory[0]; return <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => void downloadAuthenticatedFile(latest.downloadUrl, latest.fileName, messageApi)}>{latest.fileName}</Button>
+                        <Text type="secondary">{new Date(latest.submittedAt).toLocaleString()}</Text>
+                        {isPreviewable(latest.fileName) && <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => { setInlinePreviewFile(latest); setInlinePreviewEntry(undefined); }}>预览</Button>}
+                      </div>; })()
+                    : <Text type="secondary">暂无提交记录</Text>}
+                </section>
+                {submissionHistory.length > 0 && (() => { const latest = submissionHistory[0]; const entries = latest.archiveEntries ?? []; return <section>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text strong>文件预览</Text>
+                  </div>
+                  {entries.length > 0 && <Space size={4} wrap style={{ marginBottom: 8 }}>
+                    {entries.map((e) => {
+                      const entryFileName = e.split('/').pop() ?? e;
+                      const canPrev = isPreviewable(entryFileName);
+                      return <Button key={e} size="small" type={inlinePreviewEntry === e ? 'primary' : canPrev ? 'default' : 'dashed'} disabled={!canPrev} onClick={() => setInlinePreviewEntry(e)}>{entryFileName}</Button>;
+                    })}
+                  </Space>}
+                  {entries.length === 0 && !isPreviewable(latest.fileName) && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该文件类型暂不支持预览，请下载查看" />}
+                  {(isPreviewable(latest.fileName) || entries.length > 0) && <InlineFilePreview submissionId={latest.id} fileName={latest.fileName} archiveEntry={entries.length > 0 ? inlinePreviewEntry : undefined} />}
+                </section>; })()}
+                <section>
+                  <Text strong>留言交流（{teacherComments.length}）</Text>
+                  {teacherCommentsLoading ? <Text type="secondary">加载中...</Text> : <>
+                    <Space direction="vertical" size={8} className="full-width">
+                      {teacherComments.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无留言" />}
+                      {teacherComments.map((c) => <div key={c.id} className={`comment-item comment-${c.authorRole.toLowerCase()}`}>
+                        <div className="comment-header"><Tag color={c.authorRole === 'TEACHER' ? 'orange' : 'blue'}>{c.authorRole === 'TEACHER' ? '教师' : '学生'}</Tag><Text strong>{c.authorName}</Text><Text type="secondary" className="comment-time">{new Date(c.createdAt).toLocaleString()}</Text></div>
+                        <div className="comment-content">{c.content}</div>
+                        {c.attachmentFileName && c.attachmentUrl && <div className="comment-attachment"><Button type="link" size="small" icon={<PaperClipOutlined />} href={c.attachmentUrl}>{c.attachmentFileName}</Button></div>}
+                      </div>)}
+                    </Space>
+                    <div style={{ marginTop: 8 }}>
+                      <Input.TextArea rows={2} maxLength={2000} value={teacherCommentText} onChange={(e) => setTeacherCommentText(e.target.value)} placeholder="回复学生..." onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); void sendTeacherComment(); } }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                        <Upload showUploadList={false} beforeUpload={(file) => { setTeacherCommentFile(file); return Upload.LIST_IGNORE; }}>
+                          <Button size="small" icon={<PaperClipOutlined />}>{teacherCommentFile ? teacherCommentFile.name : '添加附件'}</Button>
+                        </Upload>
+                        {teacherCommentFile && <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => setTeacherCommentFile(null)} />}
+                        <Button type="primary" size="small" loading={sendingTeacherComment} disabled={!teacherCommentText.trim()} onClick={() => void sendTeacherComment()}>回复</Button>
+                      </div>
+                    </div>
+                  </>}
+                </section>
+              </Space>
+            },
+            ...(selected ? [{
+              key: 'analysis',
+              label: '智能分析',
+              children: <Space direction="vertical" size={12} className="full-width">
           <section className="analysis-run-progress">
             <Space direction="vertical" size={8} className="full-width">
               <div className="analysis-run-progress-heading">
@@ -833,91 +1184,13 @@ function AnalysisReviewWorkspace({ student, taskId, initialJobId }: {
               }
             ]}
           />
-          {selected.review && <><Space wrap>
-            <InputNumber min={0} max={100} precision={2} value={ruleScore} onChange={setRuleScore} placeholder="规则得分" />
-            <InputNumber min={0} max={100} precision={2} value={qualityScore} onChange={setQualityScore} placeholder="AI参考分" />
-          </Space>
-          <Input.TextArea rows={3} maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="填写教师审核意见" />
-          <Space>
-            <Button loading={saving} onClick={() => void save(false)}>保存审核</Button>
-            <Button type="primary" loading={saving} disabled={selected.review.status === 'PUBLISHED'} onClick={() => void save(true)}>发布结果</Button>
-          </Space></>}
-        </Space> : <Empty description="暂无分析作业" />}
-      </Card>
-    </div>
-  </div>;
-}
+              </Space>
+            }] : [])
+          ]} />
 
-function LegacyStudentAnalysisPage({ student }: { student: Student }) {
-  const [tasks, setTasks] = useState<LegacyAnalysisTask[]>([]);
-  const [selectedTask, setSelectedTask] = useState<LegacyAnalysisTask>();
-  const [loading, setLoading] = useState(false);
-  const [messageApi, contextHolder] = message.useMessage();
 
-  const loadTasks = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get<{ tasks: Array<Record<string, unknown>> }>('/api/work/tasks');
-      const items = response.data.tasks.map((item) => ({
-        taskId: String(item.taskId ?? item.task_id ?? ''),
-        fileName: String(item.fileName ?? item.file_name ?? ''),
-        status: String(item.status ?? 'pending'),
-        progress: Number(item.progress ?? 0)
-      }));
-      setTasks(items);
-      setSelectedTask((current) => items.find((item) => item.taskId === current?.taskId) ?? items[0]);
-    } catch {
-      messageApi.error('智能分析任务加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [messageApi]);
 
-  async function selectTask(task: LegacyAnalysisTask) {
-    setSelectedTask(task);
-    try {
-      const response = await axios.get<Record<string, unknown>>(`/api/work/tasks/${task.taskId}`);
-      const contentAnalysis = (response.data.contentAnalysis ?? response.data.content_analysis) as LegacyAnalysisTask['contentAnalysis'];
-      setSelectedTask({
-        ...task,
-        status: String(response.data.status ?? task.status),
-        progress: Number(response.data.progress ?? task.progress),
-        error: response.data.error ? String(response.data.error) : undefined,
-        contentAnalysis
-      });
-    } catch {
-      messageApi.error('智能分析结果加载失败');
-    }
-  }
-
-  useEffect(() => { void loadTasks(); }, [loadTasks]);
-
-  const columns: ColumnsType<LegacyAnalysisTask> = [
-    { title: '作品', dataIndex: 'fileName', render: (name, task) => <Button type="link" onClick={() => void selectTask(task)}>{name}</Button> },
-    { title: '状态', dataIndex: 'status', width: 120, render: (status) => <Tag color={status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'blue'}>{status}</Tag> },
-    { title: '进度', dataIndex: 'progress', width: 100, render: (progress) => `${progress}%` }
-  ];
-
-  return <div className="course-tasks-page">
-    {contextHolder}
-    <section className="course-detail-heading"><div><Title level={3}>{student.name}的智能分析</Title></div><Button onClick={() => void loadTasks()} loading={loading}>刷新</Button></section>
-    <div className="student-analysis-workspace">
-      <Card size="small" title="分析任务">
-        <Table<LegacyAnalysisTask> size="small" rowKey="taskId" loading={loading} dataSource={tasks} columns={columns} pagination={{ pageSize: 6, showSizeChanger: false }} locale={{ emptyText: <Empty description="暂无分析任务" /> }} />
-      </Card>
-      <Card size="small" title="分析结果">
-        {selectedTask ? <Space direction="vertical" size={12} className="full-width">
-          <Descriptions size="small" column={2}>
-            <Descriptions.Item label="作品名称" span={2}>{selectedTask.fileName}</Descriptions.Item>
-            <Descriptions.Item label="分析状态">{selectedTask.status}</Descriptions.Item>
-            <Descriptions.Item label="分析进度">{selectedTask.progress}%</Descriptions.Item>
-            <Descriptions.Item label="主题" span={2}>{selectedTask.contentAnalysis?.overallTopic ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="评分">{selectedTask.contentAnalysis?.evaluation?.totalScore ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="等级">{selectedTask.contentAnalysis?.evaluation?.grade ?? '-'}</Descriptions.Item>
-          </Descriptions>
-          {selectedTask.contentAnalysis?.summary && <section className="task-detail-text-section"><Text type="secondary">分析摘要</Text><div className="task-detail-long-text">{selectedTask.contentAnalysis.summary}</div></section>}
-          {selectedTask.error && <Text type="danger">{selectedTask.error}</Text>}
-        </Space> : <Empty description="选择一个分析任务查看结果" />}
+        </Space>
       </Card>
     </div>
   </div>;
@@ -931,6 +1204,8 @@ function CourseTasks({ course, onOpenTask }: { course: CourseDetail; onOpenTask:
   const [saving, setSaving] = useState(false);
   const [importingDescription, setImportingDescription] = useState(false);
   const [expandedDescriptionIds, setExpandedDescriptionIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchUpdating, setBatchUpdating] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<TaskForm>();
   const loadTasks = useCallback(async () => {
@@ -989,13 +1264,66 @@ function CourseTasks({ course, onOpenTask }: { course: CourseDetail; onOpenTask:
       setImportingDescription(false);
     }
   }
+  async function batchUpdateStatus(status: TaskStatus) {
+    if (selectedIds.length === 0) return;
+    setBatchUpdating(true);
+    try {
+      await axios.put('/api/tasks/batch-status', { taskIds: selectedIds, status });
+      setSelectedIds([]);
+      await loadTasks();
+      messageApi.success(`已更新 ${selectedIds.length} 个作业状态`);
+    } catch {
+      messageApi.error('批量更新失败');
+    } finally {
+      setBatchUpdating(false);
+    }
+  }
+  function toggleSelect(id: string) {
+    setSelectedIds((ids) => ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id]);
+  }
+  function toggleSelectAll() {
+    const visible = tasks.filter((task) => task.title.toLowerCase().includes(keyword.trim().toLowerCase()));
+    if (selectedIds.length === visible.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(visible.map((t) => t.id));
+    }
+  }
   const visible = tasks.filter((task) => task.title.toLowerCase().includes(keyword.trim().toLowerCase()));
-  return <><>{contextHolder}</><Card className="course-task-list" size="small" title="作业" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openTaskModal()}>新建作业</Button>}>
+  const allSelected = visible.length > 0 && selectedIds.length === visible.length;
+  const batchMenuItems = [
+    { key: 'DRAFT', label: '设为草稿', icon: <EditOutlined /> },
+    { key: 'ACTIVE', label: '设为进行中', icon: <PlayCircleOutlined /> },
+    { key: 'CLOSED', label: '设为已结束', icon: <StopOutlined /> },
+  ];
+  return <><>{contextHolder}</><Card className="course-task-list" size="small" title={<Space><span>作业</span>{selectedIds.length > 0 && <Tag color="blue">已选 {selectedIds.length} 项</Tag>}</Space>} extra={<Space>{selectedIds.length > 0 && <Dropdown menu={{ items: batchMenuItems, onClick: ({ key }) => void batchUpdateStatus(key as TaskStatus) }}><Button loading={batchUpdating}>批量设置状态</Button></Dropdown>}<Button type="primary" icon={<PlusOutlined />} onClick={() => openTaskModal()}>新建作业</Button></Space>}>
     <div className="course-task-filters"><Input prefix={<SearchOutlined />} placeholder="搜索作业" value={keyword} onChange={(event) => setKeyword(event.target.value)} className="course-task-search" /></div>
-    <div className="course-task-items">{visible.length === 0 && <Empty description="暂无作业" />}{visible.map((task) => <article className="course-task-item" key={task.id}>
-      <div className="course-task-main"><Button className="course-task-title-link" type="link" onClick={() => onOpenTask(task)}>{task.title}</Button><Text type="secondary">创建时间：{new Date(task.createdAt).toLocaleString()}　截止时间：{task.deadline ? new Date(task.deadline).toLocaleString() : '不设截止时间'}</Text>{task.description && <div className="course-task-description">{expandedDescriptionIds.includes(task.id) || task.description.length <= 160 ? task.description : `${task.description.slice(0, 160)}...`}{task.description.length > 160 && <Button type="link" size="small" onClick={() => setExpandedDescriptionIds((ids) => ids.includes(task.id) ? ids.filter((id) => id !== task.id) : [...ids, task.id])}>{expandedDescriptionIds.includes(task.id) ? '收起' : '展开'}</Button>}</div>}</div>
-      <div className="course-task-actions"><Tooltip title="编辑作业"><Button type="text" size="small" icon={<EditOutlined />} aria-label="编辑作业" onClick={() => openTaskModal(task)} /></Tooltip><Popconfirm title="确定删除该作业？" onConfirm={() => void deleteTask(task)}><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label="删除作业" /></Popconfirm></div>
-    </article>)}</div>
+    <div className="course-task-items">
+      {visible.length === 0 && <Empty description="暂无作业" />}
+      {visible.length > 0 && <div className="course-task-select-all"><Checkbox checked={allSelected} indeterminate={selectedIds.length > 0 && !allSelected} onChange={toggleSelectAll}>全选</Checkbox></div>}
+      {visible.map((task) => {
+        const desc = task.description || '';
+        const truncated = desc.length > 160 ? `${desc.slice(0, 160)}...` : desc;
+        return <article className={`course-task-item${selectedIds.includes(task.id) ? ' selected' : ''}`} key={task.id}>
+          <Checkbox checked={selectedIds.includes(task.id)} onChange={() => toggleSelect(task.id)} className="course-task-checkbox" />
+          <div className="course-task-main">
+            <div className="course-task-header">
+              <Button className="course-task-title-link" type="link" onClick={() => onOpenTask(task)}>{task.title}</Button>
+              <Tag color={statusMeta[task.status].color}>{statusMeta[task.status].label}</Tag>
+            </div>
+            {desc && <Text className="course-task-desc">{expandedDescriptionIds.includes(task.id) ? desc : truncated}{desc.length > 160 && <Button type="link" size="small" className="course-task-desc-toggle" onClick={() => setExpandedDescriptionIds((ids) => ids.includes(task.id) ? ids.filter((id) => id !== task.id) : [...ids, task.id])}>{expandedDescriptionIds.includes(task.id) ? '收起' : '展开'}</Button>}</Text>}
+            <div className="course-task-meta">
+              <span>创建于 {new Date(task.createdAt).toLocaleDateString()}</span>
+              {task.deadline && <span>截止 {new Date(task.deadline).toLocaleDateString()}</span>}
+            </div>
+          </div>
+          <div className="course-task-actions">
+            <Tooltip title="编辑"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => openTaskModal(task)} /></Tooltip>
+            <Popconfirm title="确定删除？" onConfirm={() => void deleteTask(task)}><Button type="text" size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
+          </div>
+        </article>;
+      })}
+    </div>
   </Card>
   <Modal title={editingTask ? '编辑作业' : '新建作业'} open={modalOpen} confirmLoading={saving} onCancel={() => setModalOpen(false)} onOk={() => void saveTask()}>
     <Form form={form} layout="vertical"><Form.Item name="title" label="作业名称" rules={[{ required: true, message: '请输入作业名称' }]}><Input maxLength={100} /></Form.Item><Form.Item name="description" label="作业介绍" rules={[{ required: true, message: '请输入作业介绍' }]}><Input.TextArea rows={5} maxLength={5000} placeholder="填写作业背景、目标和完成说明" /></Form.Item><Form.Item label="导入作业介绍"><Upload accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" showUploadList={false} beforeUpload={(file) => { void importDescription(file); return Upload.LIST_IGNORE; }}><Button icon={<UploadOutlined />} loading={importingDescription}>导入 PDF 或 Word</Button></Upload></Form.Item><Form.Item name="deadline" label="截止时间"><DatePicker showTime className="full-width" /></Form.Item><Form.Item name="status" label="状态"><Select options={Object.entries(statusMeta).map(([value, item]) => ({ value, label: item.label }))} /></Form.Item></Form>
@@ -1015,8 +1343,12 @@ function TaskDetail({ courseId, task, onOpenAnalysis }: {
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
   const [importingRule, setImportingRule] = useState(false);
+  const [remindModalOpen, setRemindModalOpen] = useState(false);
+  const [remindMessage, setRemindMessage] = useState('');
+  const [reminding, setReminding] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
   const [ruleForm] = Form.useForm<RuleForm>();
+  const [activeTab, setActiveTab] = useState<string>(() => loadNavState<string>('task-detail-tab', 'detail'));
 
   const loadRule = useCallback(async () => {
     try {
@@ -1028,6 +1360,11 @@ function TaskDetail({ courseId, task, onOpenAnalysis }: {
   }, [messageApi, task.id]);
 
   useEffect(() => { void loadRule(); }, [loadRule]);
+
+  // 保存标签页状态
+  useEffect(() => {
+    saveNavState('task-detail-tab', activeTab);
+  }, [activeTab]);
 
   function openRuleModal() {
     ruleForm.setFieldsValue({
@@ -1108,6 +1445,20 @@ function TaskDetail({ courseId, task, onOpenAnalysis }: {
     }
   }
 
+  async function remindStudents() {
+    setReminding(true);
+    try {
+      await axios.post(`/api/tasks/${task.id}/remind`, { message: remindMessage.trim() || undefined });
+      setRemindModalOpen(false);
+      setRemindMessage('');
+      messageApi.success('提醒已发送给所有学生');
+    } catch {
+      messageApi.error('提醒发送失败');
+    } finally {
+      setReminding(false);
+    }
+  }
+
   async function downloadFile(url: string, fileName: string) {
     try {
       const response = await axios.get<Blob>(url, { responseType: 'blob' });
@@ -1131,7 +1482,7 @@ function TaskDetail({ courseId, task, onOpenAnalysis }: {
         <Title level={3}>{task.title}</Title>
       </div>
     </section>
-    <Tabs items={[
+    <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
       {
         key: 'detail',
         label: '作业详情',
@@ -1141,6 +1492,7 @@ function TaskDetail({ courseId, task, onOpenAnalysis }: {
               <Descriptions.Item label="状态"><Tag color={statusMeta[task.status].color}>{statusMeta[task.status].label}</Tag></Descriptions.Item>
               <Descriptions.Item label="创建时间">{new Date(task.createdAt).toLocaleString()}</Descriptions.Item>
               <Descriptions.Item label="截止时间">{task.deadline ? new Date(task.deadline).toLocaleString() : '不设截止时间'}</Descriptions.Item>
+              <Descriptions.Item label="操作"><Button icon={<BellOutlined />} onClick={() => setRemindModalOpen(true)}>提醒学生提交</Button></Descriptions.Item>
             </Descriptions>
             <section className="task-detail-text-section"><Text type="secondary">作业介绍</Text><div className="task-detail-long-text">{descriptionExpanded || task.description.length <= 500 ? task.description : `${task.description.slice(0, 500)}...`}{task.description.length > 500 && <Button type="link" size="small" onClick={() => setDescriptionExpanded((value) => !value)}>{descriptionExpanded ? '收起' : '展开'}</Button>}</div></section>
           </Card>
@@ -1177,6 +1529,12 @@ function TaskDetail({ courseId, task, onOpenAnalysis }: {
           </Upload>
         </Form.Item>
       </Form>
+    </Modal>
+    <Modal title="提醒学生提交作业" open={remindModalOpen} confirmLoading={reminding} onCancel={() => setRemindModalOpen(false)} onOk={() => void remindStudents()} okText="发送提醒">
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <Text type="secondary">将向所有选课学生发送提醒通知。</Text>
+        <Input.TextArea rows={3} maxLength={200} placeholder="输入提醒内容（可选，默认：请尽快提交作业）" value={remindMessage} onChange={(e) => setRemindMessage(e.target.value)} />
+      </Space>
     </Modal>
   </div>;
 }

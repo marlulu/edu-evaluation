@@ -3,6 +3,7 @@ import { Button, Card, Checkbox, Col, Empty, Form, Input, Modal, Popconfirm, Row
 import type { ColumnsType } from 'antd/es/table';
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
+import { saveNavState, loadNavState } from '../../navigation-state';
 import type { ModelProfile, ModelProfileInput } from './api';
 import { activateModelProfile, createModelProfile, deleteModelProfile, fetchModelProfiles, testModelProfile, updateModelProfile } from './api';
 
@@ -10,7 +11,7 @@ const { Paragraph, Title, Text } = Typography;
 type FormValues = ModelProfileInput;
 const officialPreset = { providerName: 'OpenAI', website: 'https://platform.openai.com', apiKeyHelpUrl: 'https://platform.openai.com/api-keys', baseUrl: 'https://api.openai.com/v1' };
 
-export function SystemConfig() {
+export function SystemConfig({ onSettingsSaved }: { onSettingsSaved?: () => void } = {}) {
   const [profiles, setProfiles] = useState<ModelProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<ModelProfile>();
@@ -20,8 +21,10 @@ export function SystemConfig() {
   const [showKey, setShowKey] = useState(false);
   const [form] = Form.useForm<FormValues>();
   const [messageApi, contextHolder] = message.useMessage();
+  const [activeTab, setActiveTab] = useState<string>(() => loadNavState<string>('system-config-tab', 'models'));
   const load = useCallback(async () => { setLoading(true); try { setProfiles(await fetchModelProfiles()); } catch { messageApi.error('模型配置加载失败'); } finally { setLoading(false); } }, [messageApi]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { saveNavState('system-config-tab', activeTab); }, [activeTab]);
   function showCreate() { setEditing(undefined); setShowKey(false); form.setFieldsValue({ ...officialPreset, modelName: '', apiKey: '' }); setOpen(true); }
   function showEdit(profile: ModelProfile) { setEditing(profile); setShowKey(false); form.setFieldsValue({ providerName: profile.providerName, note: profile.note ?? undefined, website: profile.website ?? undefined, apiKeyHelpUrl: profile.apiKeyHelpUrl ?? undefined, baseUrl: profile.baseUrl, modelName: profile.modelName, apiKey: '' }); setOpen(true); }
   async function save() { const values = await form.validateFields(); if (editing && !values.apiKey) { messageApi.error('修改配置时请重新输入 API Key'); return; } setSaving(true); try { if (editing) await updateModelProfile(editing.id, values); else await createModelProfile(values); messageApi.success('模型档案已保存'); setOpen(false); void load(); } catch { messageApi.error('保存失败'); } finally { setSaving(false); } }
@@ -34,7 +37,7 @@ export function SystemConfig() {
     { title: '状态', width: 110, render: (_, p) => p.lastTestSuccess === null ? <Tag>未测试</Tag> : <Tag color={p.lastTestSuccess ? 'green' : 'red'}>{p.lastTestSuccess ? '可用' : '失败'}</Tag> },
     { title: '操作', width: 270, render: (_, p) => <Space size={4}><Button type={p.active ? 'default' : 'primary'} disabled={p.active} onClick={() => void activate(p.id)}>设为默认</Button><Button icon={<PlayCircleOutlined />} loading={testingId === p.id} onClick={() => void test(p)}>测试</Button><Button type="text" icon={<EditOutlined />} aria-label="编辑模型" onClick={() => showEdit(p)} /><Popconfirm title="删除此模型档案？" disabled={p.active} onConfirm={() => void deleteModelProfile(p.id).then(load)}><Button type="text" danger disabled={p.active} icon={<DeleteOutlined />} aria-label="删除模型" /></Popconfirm></Space> }
   ];
-  return <Space direction="vertical" size={18} className="content-stack">{contextHolder}<section className="page-heading"><div><Tag color="blue">系统设置</Tag><Title level={2}>系统配置</Title><Paragraph type="secondary">管理模型档案，以及教师和助教的模块权限。</Paragraph></div></section><Tabs items={[{ key: 'models', label: '模型配置', children: <><div style={{ marginBottom: 16 }}><Button type="primary" icon={<PlusOutlined />} onClick={showCreate}>新增模型</Button></div><Card><Table rowKey="id" loading={loading} columns={columns} dataSource={profiles} pagination={false} locale={{ emptyText: <Empty description="暂无模型档案" /> }} scroll={{ x: 900 }} /></Card></> }, { key: 'permissions', label: '教师权限', children: <PermissionConfig /> }]} /><Modal title={editing ? '编辑模型档案' : '新增模型档案'} open={open} onCancel={() => setOpen(false)} onOk={() => void save()} confirmLoading={saving} destroyOnClose><Form form={form} layout="vertical"><Row gutter={16}><Col span={12}><Form.Item name="providerName" label="供应商名称" rules={[{ required: true }]}><Input placeholder="例如：OpenAI、DeepSeek" /></Form.Item></Col><Col span={12}><Form.Item name="modelName" label="模型名称" rules={[{ required: true }]}><Input placeholder="例如：gpt-4.1" /></Form.Item></Col></Row><Form.Item name="note" label="备注"><Input placeholder="例如：公司专用账号" /></Form.Item><Form.Item name="website" label="官网链接"><Input /></Form.Item><Form.Item name="apiKey" label="API Key" rules={[{ required: !editing }]}><Input.Password visibilityToggle={{ visible: showKey, onVisibleChange: setShowKey }} iconRender={(visible) => visible ? <EyeOutlined /> : <EyeInvisibleOutlined />} placeholder={editing ? '重新输入以更新密钥' : '输入 API Key'} /></Form.Item><Form.Item name="apiKeyHelpUrl" label="获取 API Key 链接"><Input /></Form.Item><Form.Item name="baseUrl" label="请求地址" rules={[{ required: true }]}><Input prefix={<ApiOutlined />} /></Form.Item></Form></Modal></Space>;
+  return <Space direction="vertical" size={18} className="content-stack">{contextHolder}<section className="page-heading"><div><Tag color="blue">系统设置</Tag><Title level={2}>系统配置</Title><Paragraph type="secondary">管理模型档案、教师和助教的模块权限，以及站点信息。</Paragraph></div></section><Tabs activeKey={activeTab} onChange={setActiveTab} items={[{ key: 'models', label: '模型配置', children: <><div style={{ marginBottom: 16 }}><Button type="primary" icon={<PlusOutlined />} onClick={showCreate}>新增模型</Button></div><Card><Table rowKey="id" loading={loading} columns={columns} dataSource={profiles} pagination={false} locale={{ emptyText: <Empty description="暂无模型档案" /> }} scroll={{ x: 900 }} /></Card></> }, { key: 'permissions', label: '教师权限', children: <PermissionConfig /> }, { key: 'site', label: '站点设置', children: <SiteSettingsConfig onSaved={onSettingsSaved} /> }]} /><Modal title={editing ? '编辑模型档案' : '新增模型档案'} open={open} onCancel={() => setOpen(false)} onOk={() => void save()} confirmLoading={saving} destroyOnHidden><Form form={form} layout="vertical"><Row gutter={16}><Col span={12}><Form.Item name="providerName" label="供应商名称" rules={[{ required: true }]}><Input placeholder="例如：OpenAI、DeepSeek" /></Form.Item></Col><Col span={12}><Form.Item name="modelName" label="模型名称" rules={[{ required: true }]}><Input placeholder="例如：gpt-4.1" /></Form.Item></Col></Row><Form.Item name="note" label="备注"><Input placeholder="例如：公司专用账号" /></Form.Item><Form.Item name="website" label="官网链接"><Input /></Form.Item><Form.Item name="apiKey" label="API Key" rules={[{ required: !editing }]}><Input.Password visibilityToggle={{ visible: showKey, onVisibleChange: setShowKey }} iconRender={(visible) => visible ? <EyeOutlined /> : <EyeInvisibleOutlined />} placeholder={editing ? '重新输入以更新密钥' : '输入 API Key'} /></Form.Item><Form.Item name="apiKeyHelpUrl" label="获取 API Key 链接"><Input /></Form.Item><Form.Item name="baseUrl" label="请求地址" rules={[{ required: true }]}><Input prefix={<ApiOutlined />} /></Form.Item></Form></Modal></Space>;
 }
 
 type PermissionAction = 'VIEW' | 'CREATE' | 'EDIT' | 'DELETE';
@@ -52,4 +55,47 @@ function PermissionConfig() {
   async function save(teacher: Teacher, permission: TeacherPermission, actions: PermissionAction[]) { const key = `${teacher.id}-${permission.moduleName}`; setSavingKey(key); try { const response = await axios.put<Teacher>(`/api/auth/admin/module-permissions/${teacher.id}`, { moduleName: permission.moduleName, actions }); setTeachers((current) => current.map((item) => item.id === teacher.id ? response.data : item)); messageApi.success('权限已更新'); } catch { messageApi.error('权限更新失败'); } finally { setSavingKey(undefined); } }
   const columns: ColumnsType<Teacher> = [{ title: '账号', dataIndex: 'username', width: 160 }, { title: '姓名', dataIndex: 'displayName', width: 150 }, { title: '角色', dataIndex: 'role', width: 110, render: (role: Teacher['role']) => <Tag color={role === 'TEACHER' ? 'blue' : 'purple'}>{role === 'TEACHER' ? '教师' : '助教'}</Tag> }, { title: '模块操作权限', render: (_, teacher) => <Space direction="vertical" size={8}>{teacher.permissions.map((permission) => { const key = `${teacher.id}-${permission.moduleName}`; return <Space key={key} wrap><strong>{moduleLabels[permission.moduleName]}</strong><Checkbox.Group<PermissionAction> options={(Object.keys(actionLabels) as PermissionAction[]).map((value) => ({ value, label: actionLabels[value] }))} value={permission.actions} onChange={(values) => void save(teacher, permission, values)} />{savingKey === key && <Button size="small" loading />}</Space>; })}</Space> }];
   return <>{contextHolder}<Card><Table rowKey="id" columns={columns} dataSource={teachers} loading={loading} locale={{ emptyText: <Empty description="暂无教师账号" /> }} pagination={false} scroll={{ x: 900 }} /></Card></>;
+}
+
+function SiteSettingsConfig({ onSaved }: { onSaved?: () => void }) {
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [messageApi, contextHolder] = message.useMessage();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get<{ footer_text?: string; icp_filing?: string }>('/api/site/settings');
+      form.setFieldsValue({ footerText: res.data.footer_text ?? '', icpFiling: res.data.icp_filing ?? '' });
+    } catch { messageApi.error('站点设置加载失败'); }
+    finally { setLoading(false); }
+  }, [form, messageApi]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function save() {
+    const values = await form.validateFields();
+    setSaving(true);
+    try {
+      await axios.put('/api/site/settings', { footer_text: values.footerText, icp_filing: values.icpFiling });
+      messageApi.success('站点设置已保存');
+      onSaved?.();
+    } catch { messageApi.error('保存失败'); }
+    finally { setSaving(false); }
+  }
+
+  return <>{contextHolder}<Card loading={loading}>
+    <Form form={form} layout="vertical" style={{ maxWidth: 600 }}>
+      <Form.Item name="footerText" label="页脚文字">
+        <Input placeholder="例如：© 2026 智评课堂" />
+      </Form.Item>
+      <Form.Item name="icpFiling" label="ICP备案号">
+        <Input placeholder="例如：京ICP备12345678号" />
+      </Form.Item>
+      <Form.Item>
+        <Button type="primary" loading={saving} onClick={() => void save()}>保存设置</Button>
+      </Form.Item>
+    </Form>
+  </Card></>;
 }

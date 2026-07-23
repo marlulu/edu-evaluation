@@ -1,7 +1,6 @@
 package com.example.eduevaluation.common;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -26,8 +25,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class AiWorkerClient {
 
     private String baseUrl = "http://localhost:8001";
-    private String parseTaskPath = "/parse/tasks";
-    private String evaluationTaskPath = "/evaluate/tasks";
     private int timeoutSeconds = 120;
     private int connectTimeoutSeconds = 10;
 
@@ -36,28 +33,6 @@ public class AiWorkerClient {
         factory.setConnectTimeout(Duration.ofSeconds(connectTimeoutSeconds));
         factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
         return new RestTemplate(factory);
-    }
-
-    /**
-     * Create a RestTemplate with longer timeout for evaluation tasks
-     */
-    private RestTemplate createEvaluationRestTemplate() {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofSeconds(connectTimeoutSeconds));
-        factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds * 2));  // Double timeout for evaluation
-        return new RestTemplate(factory);
-    }
-
-    public Map<String, Object> parseFiles(Map<String, Object> request) {
-        RestTemplate restTemplate = createRestTemplate();
-        String url = baseUrl + parseTaskPath;
-        return restTemplate.postForObject(url, request, Map.class);
-    }
-
-    public Map<String, Object> evaluateSubmission(Map<String, Object> request) {
-        RestTemplate restTemplate = createEvaluationRestTemplate();
-        String url = baseUrl + evaluationTaskPath;
-        return restTemplate.postForObject(url, request, Map.class);
     }
 
     @SuppressWarnings("unchecked")
@@ -88,12 +63,6 @@ public class AiWorkerClient {
                     "文档解析服务暂时不可用，请稍后重试。",
                     exception);
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> analyzeWorkAsync(Map<String, Object> request) {
-        return createRestTemplate().postForObject(
-                baseUrl + "/analysis/manifest", request, Map.class);
     }
 
     @SuppressWarnings("unchecked")
@@ -178,22 +147,6 @@ public class AiWorkerClient {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
-    }
-
-    public String getParseTaskPath() {
-        return parseTaskPath;
-    }
-
-    public void setParseTaskPath(String parseTaskPath) {
-        this.parseTaskPath = parseTaskPath;
-    }
-
-    public String getEvaluationTaskPath() {
-        return evaluationTaskPath;
-    }
-
-    public void setEvaluationTaskPath(String evaluationTaskPath) {
-        this.evaluationTaskPath = evaluationTaskPath;
     }
 
     public int getTimeoutSeconds() {

@@ -90,6 +90,8 @@ docker compose version
 
 ## 3. 快速部署（Docker Compose）
 
+> **想 5 分钟搞定？** 请查看 [一键部署指南](QUICK_DEPLOY.md)。
+
 ### 3.1 获取代码
 
 ```bash

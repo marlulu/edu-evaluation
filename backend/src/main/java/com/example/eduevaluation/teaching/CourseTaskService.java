@@ -6,6 +6,10 @@ import com.example.eduevaluation.auth.ModulePermissionService;
 import com.example.eduevaluation.auth.UserRole;
 import com.example.eduevaluation.common.AiWorkerClient;
 import com.example.eduevaluation.common.StorageService;
+import com.example.eduevaluation.notification.NotificationService;
+import com.example.eduevaluation.work.AnalysisReviewService;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,10 +41,15 @@ public class CourseTaskService {
     private final CourseTaskRepository tasks;
     private final TaskSubmissionRepository submissions;
     private final TaskSubmissionRuleRepository rules;
+    private final CourseAttachmentRepository courseAttachments;
+    private final SubmissionCommentRepository comments;
     private final ModulePermissionService permissions;
     private final AiWorkerClient aiWorkerClient;
     private final StorageService storageService;
+    private final NotificationService notificationService;
+    private final AnalysisReviewService analysisReviewService;
     private final Path uploadDirectory;
+    private final Path courseAttachmentDirectory;
 
     public CourseTaskService(
             CourseRepository courses,
@@ -49,16 +58,26 @@ public class CourseTaskService {
             CourseTaskRepository tasks,
             TaskSubmissionRepository submissions,
             TaskSubmissionRuleRepository rules,
+            CourseAttachmentRepository courseAttachments,
+            SubmissionCommentRepository comments,
             ModulePermissionService permissions,
             AiWorkerClient aiWorkerClient,
             StorageService storageService,
+            NotificationService notificationService,
+            AnalysisReviewService analysisReviewService,
             @Value("${app.upload-dir:data/uploads}") String uploadDirectory
     ) {
         this.courses = courses; this.courseStaff = courseStaff; this.courseMembers = courseMembers;
-        this.tasks = tasks; this.submissions = submissions; this.rules = rules; this.permissions = permissions;
+        this.tasks = tasks; this.submissions = submissions; this.rules = rules;
+        this.courseAttachments = courseAttachments;
+        this.comments = comments;
+        this.permissions = permissions;
         this.aiWorkerClient = aiWorkerClient;
         this.storageService = storageService;
+        this.notificationService = notificationService;
+        this.analysisReviewService = analysisReviewService;
         this.uploadDirectory = Path.of(uploadDirectory, "task-submissions").toAbsolutePath().normalize();
+        this.courseAttachmentDirectory = Path.of(uploadDirectory, "course-attachments").toAbsolutePath().normalize();
     }
 
     public List<TaskResponse> listForCourse(String courseId, AppPrincipal principal) {
@@ -106,6 +125,35 @@ public class CourseTaskService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "删除作业文档失败", exception);
         }
         tasks.delete(task);
+    }
+
+    @Transactional
+    public List<TaskResponse> batchUpdateStatus(List<String> taskIds, String status, AppPrincipal principal) {
+        permissions.require(principal, ModulePermissionService.TASK, ModuleAction.EDIT);
+        TaskStatus targetStatus = TaskStatus.valueOf(status);
+        List<TaskResponse> results = new java.util.ArrayList<>();
+        for (String taskId : taskIds) {
+            CourseTaskEntity task = requireTask(taskId);
+            requireStaff(task.getCourseId(), principal);
+            task.update(task.getTitle(), task.getDescription(), task.getDeadline(), targetStatus);
+            results.add(response(tasks.save(task)));
+        }
+        return results;
+    }
+
+    @Transactional
+    public void remindStudents(String taskId, String message, AppPrincipal principal) {
+        permissions.require(principal, ModulePermissionService.TASK, ModuleAction.VIEW);
+        CourseTaskEntity task = requireTask(taskId);
+        requireStaff(task.getCourseId(), principal);
+        CourseEntity course = courses.findById(task.getCourseId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "课程不存在"));
+        List<CourseMemberEntity> members = courseMembers.findByCourseId(task.getCourseId());
+        String title = "作业提醒：" + task.getTitle();
+        String content = message + "\n课程：" + course.getName();
+        for (CourseMemberEntity member : members) {
+            notificationService.send(member.getStudentId(), "task_remind", title, content, taskId);
+        }
     }
 
     public TaskRuleResponse submissionRule(String taskId, AppPrincipal principal) {
@@ -206,9 +254,17 @@ public class CourseTaskService {
                 .filter(task -> isVisibleToStudent(task, principal.studentId()))
                 .map(task -> {
                     TaskSubmissionEntity submission = submissions.findTopByTaskIdAndStudentIdOrderBySubmittedAtDesc(task.getId(), principal.studentId()).orElse(null);
+                    Double score = null;
+                    if (submission != null && submission.getAnalysisJobId() != null) {
+                        Map<String, Object> review = analysisReviewService.get(submission.getAnalysisJobId());
+                        if (review != null && "PUBLISHED".equals(review.get("status"))) {
+                            Object ruleScore = review.get("ruleScore");
+                            if (ruleScore instanceof Number n) score = n.doubleValue();
+                        }
+                    }
                     return new StudentTaskResponse(task.getId(), task.getCourseId(), task.getTitle(), task.getDescription(),
                             task.getDeadline(), submission != null, submission == null ? null : submission.getFileName(),
-                            submission == null ? null : submission.getSubmittedAt(), attachmentResponses(task.getId()), ruleResponse(task.getId()));
+                            submission == null ? null : submission.getSubmittedAt(), attachmentResponses(task.getId()), ruleResponse(task.getId()), score);
                 }).toList();
     }
 
@@ -224,6 +280,38 @@ public class CourseTaskService {
                 .filter(course -> course.getStatus() == CourseStatus.ACTIVE)
                 .map(course -> new StudentCourseResponse(course.getId(), course.getName(), course.getDescription()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<StudentAttachmentResponse> myCourseAttachments(String courseId, AppPrincipal principal) {
+        if (principal.role() != UserRole.STUDENT || principal.studentId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅学生可访问");
+        }
+        if (!courseMembers.existsByCourseIdAndStudentId(courseId, principal.studentId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "您不在该课程中");
+        }
+        return courseAttachments.findByCourseIdOrderByFileName(courseId).stream()
+                .map(a -> new StudentAttachmentResponse(a.getId(), a.getFileName(),
+                        "/api/student/courses/" + courseId + "/attachments/" + a.getId()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Resource downloadCourseAttachment(String courseId, String attachmentId, AppPrincipal principal) {
+        if (principal.role() != UserRole.STUDENT || principal.studentId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅学生可访问");
+        }
+        if (!courseMembers.existsByCourseIdAndStudentId(courseId, principal.studentId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "您不在该课程中");
+        }
+        CourseAttachmentEntity attachment = courseAttachments.findById(attachmentId)
+                .filter(a -> a.getCourseId().equals(courseId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "附件不存在"));
+        Path file = courseAttachmentDirectory.resolve(attachment.getObjectKey()).normalize();
+        if (!file.startsWith(courseAttachmentDirectory) || !Files.isRegularFile(file)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "附件不存在");
+        }
+        return new FileSystemResource(file);
     }
 
     @Transactional
@@ -268,7 +356,7 @@ public class CourseTaskService {
         }
         return new StudentTaskResponse(task.getId(), task.getCourseId(), task.getTitle(), task.getDescription(),
                 task.getDeadline(), true, latestSubmission.getFileName(), latestSubmission.getSubmittedAt(), attachmentResponses(task.getId()),
-                rule);
+                rule, null);
     }
 
     public List<SubmissionBatchHistoryResponse> submissionHistory(String taskId, AppPrincipal principal) {
@@ -280,6 +368,19 @@ public class CourseTaskService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "您未加入该课程");
         }
         return submissions.findByTaskIdAndStudentIdOrderBySubmittedAtDesc(taskId, principal.studentId()).stream()
+                .collect(java.util.stream.Collectors.groupingBy(TaskSubmissionEntity::getSubmissionBatchId,
+                        java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()))
+                .entrySet().stream()
+                .map(entry -> new SubmissionBatchHistoryResponse(entry.getKey(), entry.getValue().get(0).getSubmittedAt(),
+                        entry.getValue().stream().map(this::submissionHistoryResponse).toList()))
+                .toList();
+    }
+
+    public List<SubmissionBatchHistoryResponse> studentSubmissionHistory(String taskId, String studentId, AppPrincipal principal) {
+        permissions.require(principal, ModulePermissionService.TASK, ModuleAction.VIEW);
+        CourseTaskEntity task = requireTask(taskId);
+        requireStaff(task.getCourseId(), principal);
+        return submissions.findByTaskIdAndStudentIdOrderBySubmittedAtDesc(taskId, studentId).stream()
                 .collect(java.util.stream.Collectors.groupingBy(TaskSubmissionEntity::getSubmissionBatchId,
                         java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()))
                 .entrySet().stream()
@@ -322,7 +423,7 @@ public class CourseTaskService {
         String value = String.valueOf(jobId);
         batchSubmissions.forEach(item -> item.setAnalysisJobId(value));
         submissions.saveAll(batchSubmissions);
-        return new AnalysisStartResponse(value, objectKeys.size());
+        return new AnalysisStartResponse(value, objectKeys.size(), "queued");
     }
 
     @Transactional(readOnly = true)
@@ -334,10 +435,18 @@ public class CourseTaskService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "该学生尚未提交作业"));
         String jobId = latest.getAnalysisJobId();
         if (jobId == null || jobId.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "该学生尚未开始智能分析");
+            return new AnalysisStartResponse(null, 0, null);
         }
-        return new AnalysisStartResponse(jobId, (int) submissions.findByTaskIdAndStudentIdOrderBySubmittedAtDesc(taskId, studentId).stream()
-                .filter(item -> latest.getSubmissionBatchId().equals(item.getSubmissionBatchId())).count());
+        int fileCount = (int) submissions.findByTaskIdAndStudentIdOrderBySubmittedAtDesc(taskId, studentId).stream()
+                .filter(item -> latest.getSubmissionBatchId().equals(item.getSubmissionBatchId())).count();
+        String status = null;
+        try {
+            Map<String, Object> job = aiWorkerClient.analysisJob(jobId);
+            status = job.get("status") == null ? null : String.valueOf(job.get("status"));
+        } catch (Exception ignored) {
+            // worker unavailable, return null status
+        }
+        return new AnalysisStartResponse(jobId, fileCount, status);
     }
 
     public void requireAnalysisJobAccess(String jobId, AppPrincipal principal) {
@@ -351,6 +460,25 @@ public class CourseTaskService {
         if (!allowed) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权查看该分析任务");
         }
+    }
+
+    public List<Map<String, Object>> listAnalysisTasks() {
+        List<String> jobIds = submissions.findDistinctAnalysisJobIds();
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (String jobId : jobIds) {
+            try {
+                Map<String, Object> job = aiWorkerClient.analysisJob(jobId);
+                Map<String, Object> task = new java.util.LinkedHashMap<>();
+                task.put("taskId", jobId);
+                task.put("fileName", job.getOrDefault("fileName", jobId));
+                task.put("status", job.getOrDefault("status", "unknown"));
+                task.put("progress", job.getOrDefault("progress", 0));
+                result.add(task);
+            } catch (Exception ignored) {
+                // skip unavailable jobs
+            }
+        }
+        return result;
     }
 
     public SubmissionDownload downloadSubmission(String submissionId, AppPrincipal principal) {
@@ -371,6 +499,67 @@ public class CourseTaskService {
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "提交文件不存在", exception);
         }
+    }
+
+    public ArchiveEntryPreview previewSubmission(String submissionId, AppPrincipal principal) {
+        TaskSubmissionEntity submission = submissions.findById(submissionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "提交文件不存在"));
+        CourseTaskEntity task = requireTask(submission.getTaskId());
+        if (principal.role() == UserRole.STUDENT) {
+            if (principal.studentId() == null || !submission.getStudentId().equals(principal.studentId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权预览该提交文件");
+            }
+        } else {
+            permissions.require(principal, ModulePermissionService.TASK, ModuleAction.VIEW);
+            requireStaff(task.getCourseId(), principal);
+        }
+        try {
+            return new ArchiveEntryPreview(submission.getFileName(), submission.getContentType(),
+                    new InputStreamResource(storageService.openFile(submission.getObjectKey())));
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "提交文件不存在", exception);
+        }
+    }
+
+    public ArchiveEntryPreview previewArchiveEntry(String submissionId, String entryPath, AppPrincipal principal) {
+        TaskSubmissionEntity submission = submissions.findById(submissionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "提交文件不存在"));
+        CourseTaskEntity task = requireTask(submission.getTaskId());
+        if (principal.role() == UserRole.STUDENT) {
+            if (principal.studentId() == null || !submission.getStudentId().equals(principal.studentId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权预览该提交文件");
+            }
+        } else {
+            permissions.require(principal, ModulePermissionService.TASK, ModuleAction.VIEW);
+            requireStaff(task.getCourseId(), principal);
+        }
+        if (!extension(submission.getFileName()).equals(".zip")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "提交文件不是压缩包");
+        }
+        if (entryPath.contains("..")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "非法的文件路径");
+        }
+        // Try UTF-8 first, fall back to GBK for Chinese Windows zip files
+        for (java.nio.charset.Charset charset : new java.nio.charset.Charset[] { java.nio.charset.StandardCharsets.UTF_8, java.nio.charset.Charset.forName("GBK") }) {
+            try (ZipInputStream zip = new ZipInputStream(storageService.openFile(submission.getObjectKey()), charset)) {
+                java.util.zip.ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    if (!entry.isDirectory() && entry.getName().equals(entryPath)) {
+                        byte[] data = zip.readAllBytes();
+                        String entryFileName = Path.of(entryPath).getFileName().toString();
+                        String contentType = java.net.URLConnection.guessContentTypeFromName(entryFileName);
+                        if (contentType == null) contentType = "application/octet-stream";
+                        return new ArchiveEntryPreview(entryFileName, contentType,
+                                new org.springframework.core.io.ByteArrayResource(data) {
+                                    @Override public String getFilename() { return entryFileName; }
+                                });
+                    }
+                }
+            } catch (IOException | RuntimeException exception) {
+                // Try next charset
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "压缩包中未找到文件: " + entryPath);
     }
 
     @Transactional
@@ -520,18 +709,22 @@ public class CourseTaskService {
         if (!extension(submission.getFileName()).equals(".zip")) {
             return List.of();
         }
-        try (ZipInputStream zip = new ZipInputStream(storageService.openFile(submission.getObjectKey()))) {
-            List<String> entries = new java.util.ArrayList<>();
-            java.util.zip.ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null && entries.size() < 500) {
-                if (!entry.isDirectory()) {
-                    entries.add(entry.getName());
+        // Try UTF-8 first, fall back to GBK for Chinese Windows zip files
+        for (java.nio.charset.Charset charset : new java.nio.charset.Charset[] { java.nio.charset.StandardCharsets.UTF_8, java.nio.charset.Charset.forName("GBK") }) {
+            try (ZipInputStream zip = new ZipInputStream(storageService.openFile(submission.getObjectKey()), charset)) {
+                List<String> entries = new java.util.ArrayList<>();
+                java.util.zip.ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null && entries.size() < 500) {
+                    if (!entry.isDirectory()) {
+                        entries.add(entry.getName());
+                    }
                 }
+                return entries;
+            } catch (IOException | RuntimeException exception) {
+                // Try next charset
             }
-            return entries;
-        } catch (IOException | RuntimeException exception) {
-            return List.of();
         }
+        return List.of();
     }
 
     private String ensureSubmissionObject(TaskSubmissionEntity submission) {
@@ -641,17 +834,141 @@ public class CourseTaskService {
                 .toList();
     }
 
+    // ── Submission Comments ──
+
+    @Transactional
+    public CommentResponse addStudentComment(String taskId, String content, MultipartFile file, AppPrincipal principal) {
+        if (principal.role() != UserRole.STUDENT || principal.studentId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅学生可留言");
+        }
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "留言内容不能为空");
+        }
+        TaskSubmissionEntity submission = submissions.findTopByTaskIdAndStudentIdOrderBySubmittedAtDesc(taskId, principal.studentId()).orElse(null);
+        if (submission == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "您尚未提交该作业");
+        }
+        SubmissionCommentEntity comment = new SubmissionCommentEntity(
+                UUID.randomUUID().toString(), taskId, principal.studentId(), "STUDENT", principal.username(), content.trim());
+        saveCommentAttachment(comment, file);
+        SubmissionCommentEntity saved = comments.save(comment);
+        return commentResponse(saved);
+    }
+
+    @Transactional
+    public CommentResponse addTeacherComment(String taskId, String studentId, String content, MultipartFile file, AppPrincipal principal) {
+        CourseTaskEntity task = tasks.findById(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "作业不存在"));
+        requireTaskAccess(task, principal);
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "留言内容不能为空");
+        }
+        SubmissionCommentEntity comment = new SubmissionCommentEntity(
+                UUID.randomUUID().toString(), taskId, studentId, "TEACHER", principal.username(), content.trim());
+        saveCommentAttachment(comment, file);
+        SubmissionCommentEntity saved = comments.save(comment);
+        return commentResponse(saved);
+    }
+
+    private void saveCommentAttachment(SubmissionCommentEntity comment, MultipartFile file) {
+        if (file == null || file.isEmpty()) return;
+        String originalName = file.getOriginalFilename() == null ? "attachment" : Path.of(file.getOriginalFilename()).getFileName().toString();
+        String objectKey = "comments/" + comment.getId() + "/" + UUID.randomUUID() + "-" + originalName;
+        try (var input = file.getInputStream()) {
+            storageService.uploadFile(objectKey, input,
+                    file.getContentType() == null ? "application/octet-stream" : file.getContentType());
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "附件上传失败", exception);
+        }
+        comment.setAttachmentObjectKey(objectKey);
+        comment.setAttachmentFileName(originalName);
+        comment.setAttachmentContentType(file.getContentType());
+    }
+
+    private CommentResponse commentResponse(SubmissionCommentEntity c) {
+        String attachmentUrl = c.getAttachmentObjectKey() != null
+                ? "/api/comments/" + c.getId() + "/attachment" : null;
+        return new CommentResponse(c.getId(), c.getAuthorRole(), c.getAuthorName(), c.getContent(), c.getCreatedAt(),
+                c.getAttachmentFileName(), attachmentUrl);
+    }
+
+    public CommentDownload downloadCommentAttachment(String commentId, AppPrincipal principal) {
+        SubmissionCommentEntity comment = comments.findById(commentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "留言不存在"));
+        if (comment.getAttachmentObjectKey() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "该留言没有附件");
+        }
+        // Verify access: student can only access their own, teacher can access if they have task access
+        CourseTaskEntity task = tasks.findById(comment.getTaskId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "作业不存在"));
+        requireTaskAccess(task, principal);
+        try {
+            return new CommentDownload(comment.getAttachmentFileName(),
+                    new InputStreamResource(storageService.openFile(comment.getAttachmentObjectKey())));
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "附件文件不存在", exception);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<CommentResponse> getStudentComments(String taskId, AppPrincipal principal) {
+        if (principal.role() != UserRole.STUDENT || principal.studentId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅学生可访问");
+        }
+        return comments.findByTaskIdAndStudentIdOrderByCreatedAtAsc(taskId, principal.studentId()).stream()
+                .map(this::commentResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CommentResponse> getTeacherComments(String taskId, String studentId, AppPrincipal principal) {
+        CourseTaskEntity task = tasks.findById(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "作业不存在"));
+        requireTaskAccess(task, principal);
+        return comments.findByTaskIdAndStudentIdOrderByCreatedAtAsc(taskId, studentId).stream()
+                .map(this::commentResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public StudentFeedbackResponse getStudentFeedback(String taskId, AppPrincipal principal) {
+        if (principal.role() != UserRole.STUDENT || principal.studentId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅学生可访问");
+        }
+        // Find the latest submission to get the analysisJobId
+        TaskSubmissionEntity submission = submissions.findTopByTaskIdAndStudentIdOrderBySubmittedAtDesc(taskId, principal.studentId()).orElse(null);
+        if (submission == null || submission.getAnalysisJobId() == null) {
+            return new StudentFeedbackResponse(null, null, null, null, null);
+        }
+        Map<String, Object> review = analysisReviewService.get(submission.getAnalysisJobId());
+        if (review == null) {
+            return new StudentFeedbackResponse(null, null, null, null, null);
+        }
+        String status = (String) review.get("status");
+        if (!"PUBLISHED".equals(status)) {
+            return new StudentFeedbackResponse(null, null, null, null, status);
+        }
+        return new StudentFeedbackResponse(
+                review.get("ruleScore"),
+                review.get("qualityReferenceScore"),
+                review.get("comment"),
+                review.get("publishedAt"),
+                status
+        );
+    }
+
     public record TaskRequest(String title, String description, LocalDateTime deadline, TaskStatus status) {}
     public record TaskRuleRequest(List<String> allowedExtensions, Long maxFileSizeBytes, String ruleText, String scoringRuleText) {}
     public record TaskDescriptionImportResponse(String description, String fileName) {}
     public record RuleSourceDownload(String fileName, Resource resource) {}
     public record SubmissionDownload(String fileName, Resource resource) {}
+    public record ArchiveEntryPreview(String fileName, String contentType, Resource resource) {}
     public record AttachmentResponse(String fileName, String downloadUrl, String deleteUrl) {}
     public record TaskResponse(String id, String courseId, String title, String description, LocalDateTime deadline, TaskStatus status,
                                LocalDateTime createdAt, List<AttachmentResponse> attachments) {}
     public record StudentTaskResponse(String id, String courseId, String title, String description, LocalDateTime deadline,
                                       boolean submitted, String fileName, LocalDateTime submittedAt,
-                                      List<AttachmentResponse> attachments, TaskRuleResponse submissionRule) {}
+                                      List<AttachmentResponse> attachments, TaskRuleResponse submissionRule, Double score) {}
     public record TaskRuleResponse(List<String> allowedExtensions, long maxFileSizeBytes, String ruleText, String scoringRuleText,
                                    String importedFileName, LocalDateTime importedAt, String importedDownloadUrl) {}
     public record SubmissionHistoryResponse(String id, String fileName, LocalDateTime submittedAt, String downloadUrl,
@@ -659,6 +976,11 @@ public class CourseTaskService {
     public record SubmissionBatchHistoryResponse(String id, LocalDateTime submittedAt, List<SubmissionHistoryResponse> files) {}
     public record TeacherSubmissionResponse(String id, String studentId, String submissionBatchId, String fileName, LocalDateTime submittedAt,
                                             String downloadUrl, String analysisJobId) {}
-    public record AnalysisStartResponse(String jobId, int fileCount) {}
+    public record AnalysisStartResponse(String jobId, int fileCount, String status) {}
     public record StudentCourseResponse(String id, String name, String description) {}
+    public record StudentAttachmentResponse(String id, String fileName, String downloadUrl) {}
+    public record CommentResponse(String id, String authorRole, String authorName, String content, LocalDateTime createdAt,
+                                  String attachmentFileName, String attachmentUrl) {}
+    public record CommentDownload(String fileName, Resource resource) {}
+    public record StudentFeedbackResponse(Object ruleScore, Object qualityReferenceScore, Object comment, Object publishedAt, String status) {}
 }

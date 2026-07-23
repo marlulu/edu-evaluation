@@ -12,6 +12,8 @@ import com.example.eduevaluation.auth.ModulePermissionService;
 import com.example.eduevaluation.auth.UserRole;
 import com.example.eduevaluation.common.AiWorkerClient;
 import com.example.eduevaluation.common.StorageService;
+import com.example.eduevaluation.notification.NotificationService;
+import com.example.eduevaluation.work.AnalysisReviewService;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,12 +31,16 @@ class CourseTaskServiceTest {
     private final CourseTaskRepository tasks = mock(CourseTaskRepository.class);
     private final TaskSubmissionRepository submissions = mock(TaskSubmissionRepository.class);
     private final TaskSubmissionRuleRepository rules = mock(TaskSubmissionRuleRepository.class);
+    private final CourseAttachmentRepository courseAttachments = mock(CourseAttachmentRepository.class);
+    private final SubmissionCommentRepository comments = mock(SubmissionCommentRepository.class);
     private final ModulePermissionService permissions = mock(ModulePermissionService.class);
     private final AiWorkerClient aiWorkerClient = mock(AiWorkerClient.class);
     private final StorageService storageService = mock(StorageService.class);
+    private final NotificationService notificationService = mock(NotificationService.class);
+    private final AnalysisReviewService analysisReviewService = mock(AnalysisReviewService.class);
     private final CourseTaskService service = new CourseTaskService(
-            courses, staff, members, tasks, submissions, rules, permissions, aiWorkerClient,
-            storageService,
+            courses, staff, members, tasks, submissions, rules, courseAttachments, comments, permissions, aiWorkerClient,
+            storageService, notificationService, analysisReviewService,
             Path.of("target", "test-uploads").toString()
     );
     private final AppPrincipal student = new AppPrincipal("user-1", "student", UserRole.STUDENT, "student-1");

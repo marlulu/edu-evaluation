@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @RestController
@@ -84,7 +85,7 @@ public class ServiceController {
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
             StringBuilder output = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
@@ -132,7 +133,7 @@ public class ServiceController {
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
         StringBuilder output = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {

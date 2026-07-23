@@ -123,4 +123,14 @@ public class CourseController {
         courseService.delete(courseId, principal);
         return ResponseEntity.noContent().build();
     }
+
+    @PutMapping("/batch-status")
+    public List<CourseResponse> batchUpdateStatus(
+            @Valid @RequestBody BatchStatusRequest request,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return courseService.batchUpdateStatus(request.courseIds(), request.status(), principal);
+    }
+
+    public record BatchStatusRequest(List<String> courseIds, CourseStatus status) {}
 }

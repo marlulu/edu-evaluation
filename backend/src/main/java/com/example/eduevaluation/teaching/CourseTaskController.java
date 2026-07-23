@@ -1,8 +1,11 @@
 package com.example.eduevaluation.teaching;
 
 import com.example.eduevaluation.auth.AppPrincipal;
+import com.example.eduevaluation.notification.NotificationService;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.core.io.Resource;
@@ -23,9 +26,16 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api")
 public class CourseTaskController {
     private final CourseTaskService service;
+    private final NotificationService notificationService;
 
-    public CourseTaskController(CourseTaskService service) {
+    public CourseTaskController(CourseTaskService service, NotificationService notificationService) {
         this.service = service;
+        this.notificationService = notificationService;
+    }
+
+    private static String contentDisposition(String type, String fileName) {
+        String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
+        return type + "; filename*=UTF-8''" + encoded;
     }
 
     @GetMapping("/courses/{courseId}/tasks")
@@ -102,7 +112,7 @@ public class CourseTaskController {
     ) {
         CourseTaskService.RuleSourceDownload source = service.downloadSubmissionRuleSource(taskId, principal);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + source.fileName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition("attachment", source.fileName()))
                 .body(source.resource());
     }
 
@@ -131,7 +141,7 @@ public class CourseTaskController {
     ) {
         Resource resource = service.downloadAttachment(taskId, fileName, principal);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition("attachment", fileName))
                 .body(resource);
     }
 
@@ -153,6 +163,24 @@ public class CourseTaskController {
     @GetMapping("/student/courses")
     public List<CourseTaskService.StudentCourseResponse> myCourses(@AuthenticationPrincipal AppPrincipal principal) {
         return service.myCourses(principal);
+    }
+
+    @GetMapping("/student/courses/{courseId}/attachments")
+    public List<CourseTaskService.StudentAttachmentResponse> myCourseAttachments(
+            @PathVariable String courseId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.myCourseAttachments(courseId, principal);
+    }
+
+    @GetMapping("/student/courses/{courseId}/attachments/{attachmentId}")
+    public ResponseEntity<Resource> downloadCourseAttachment(
+            @PathVariable String courseId,
+            @PathVariable String attachmentId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        Resource file = service.downloadCourseAttachment(courseId, attachmentId, principal);
+        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment").body(file);
     }
 
     @PostMapping("/student/tasks/{taskId}/submission")
@@ -189,6 +217,15 @@ public class CourseTaskController {
         return service.teacherSubmissions(taskId, principal);
     }
 
+    @GetMapping("/tasks/{taskId}/students/{studentId}/submissions")
+    public List<CourseTaskService.SubmissionBatchHistoryResponse> studentSubmissionHistory(
+            @PathVariable String taskId,
+            @PathVariable String studentId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.studentSubmissionHistory(taskId, studentId, principal);
+    }
+
     @PostMapping("/tasks/{taskId}/students/{studentId}/analysis")
     public CourseTaskService.AnalysisStartResponse startAnalysis(
             @PathVariable String taskId,
@@ -214,7 +251,115 @@ public class CourseTaskController {
     ) {
         CourseTaskService.SubmissionDownload download = service.downloadSubmission(submissionId, principal);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + download.fileName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition("attachment", download.fileName()))
                 .body(download.resource());
     }
+
+    @GetMapping("/submissions/{submissionId}/preview")
+    public ResponseEntity<Resource> previewSubmission(
+            @PathVariable String submissionId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        CourseTaskService.ArchiveEntryPreview preview = service.previewSubmission(submissionId, principal);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, preview.contentType())
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition("inline", preview.fileName()))
+                .body(preview.resource());
+    }
+
+    @GetMapping("/submissions/{submissionId}/archive-preview")
+    public ResponseEntity<Resource> previewArchiveEntry(
+            @PathVariable String submissionId,
+            @RequestParam("entry") String entry,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        CourseTaskService.ArchiveEntryPreview preview = service.previewArchiveEntry(submissionId, entry, principal);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, preview.contentType())
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition("inline", preview.fileName()))
+                .body(preview.resource());
+    }
+
+    @PutMapping("/tasks/batch-status")
+    public List<CourseTaskService.TaskResponse> batchUpdateStatus(
+            @Valid @RequestBody BatchStatusRequest request,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.batchUpdateStatus(request.taskIds(), request.status(), principal);
+    }
+
+    @PostMapping("/tasks/{taskId}/remind")
+    public ResponseEntity<Void> remindStudents(
+            @PathVariable String taskId,
+            @RequestBody(required = false) RemindRequest request,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        String message = (request != null && request.message() != null && !request.message().isBlank())
+            ? request.message()
+            : "请尽快提交作业";
+        service.remindStudents(taskId, message, principal);
+        return ResponseEntity.ok().build();
+    }
+
+    // ── Submission Comments ──
+
+    @PostMapping("/student/tasks/{taskId}/comments")
+    public CourseTaskService.CommentResponse addStudentComment(
+            @PathVariable String taskId,
+            @RequestParam("content") String content,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.addStudentComment(taskId, content, file, principal);
+    }
+
+    @GetMapping("/student/tasks/{taskId}/comments")
+    public List<CourseTaskService.CommentResponse> getStudentComments(
+            @PathVariable String taskId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.getStudentComments(taskId, principal);
+    }
+
+    @GetMapping("/student/tasks/{taskId}/feedback")
+    public CourseTaskService.StudentFeedbackResponse getStudentFeedback(
+            @PathVariable String taskId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.getStudentFeedback(taskId, principal);
+    }
+
+    @GetMapping("/tasks/{taskId}/students/{studentId}/comments")
+    public List<CourseTaskService.CommentResponse> getTeacherComments(
+            @PathVariable String taskId,
+            @PathVariable String studentId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.getTeacherComments(taskId, studentId, principal);
+    }
+
+    @PostMapping("/tasks/{taskId}/students/{studentId}/comments")
+    public CourseTaskService.CommentResponse addTeacherComment(
+            @PathVariable String taskId,
+            @PathVariable String studentId,
+            @RequestParam("content") String content,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        return service.addTeacherComment(taskId, studentId, content, file, principal);
+    }
+
+    @GetMapping("/comments/{commentId}/attachment")
+    public ResponseEntity<Resource> downloadCommentAttachment(
+            @PathVariable String commentId,
+            @AuthenticationPrincipal AppPrincipal principal
+    ) {
+        CourseTaskService.CommentDownload download = service.downloadCommentAttachment(commentId, principal);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition("attachment", download.fileName()))
+                .body(download.resource());
+    }
+
+    public record BatchStatusRequest(List<String> taskIds, String status) {}
+    public record RemindRequest(String message) {}
 }

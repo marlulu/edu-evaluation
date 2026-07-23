@@ -33,7 +33,7 @@ public class SecurityConfig {
                         .accessDeniedHandler((request, response, exception) -> writeError(response, objectMapper, 403, "Forbidden", "没有权限执行此操作")))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/error", "/api/auth/login", "/api/auth/register/**", "/api/health", "/actuator/health", "/api/system/model-profiles/internal/active").permitAll()
-                        .requestMatchers("/api/classes/**", "/api/assignments/**", "/api/work/**").denyAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/site/settings").permitAll()
                         .requestMatchers("/api/system/**", "/api/auth/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

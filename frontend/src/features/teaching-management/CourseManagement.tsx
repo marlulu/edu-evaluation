@@ -1,5 +1,5 @@
 import { BookOutlined, CheckCircleOutlined, ClockCircleOutlined, DeleteOutlined, EditOutlined, InboxOutlined, SearchOutlined, StopOutlined, TeamOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Card, Col, Dropdown, Form, Input, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message } from 'antd';
 import type { FormInstance } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import axios from 'axios';
@@ -46,6 +46,8 @@ export default function CourseManagement({ onViewTasks }: { onViewTasks: (course
   const [teachingStaff, setTeachingStaff] = useState<TeacherOption[]>([]);
   const [courseModalOpen, setCourseModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [batchUpdating, setBatchUpdating] = useState(false);
   const [form] = Form.useForm<CourseForm>();
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -121,6 +123,21 @@ export default function CourseManagement({ onViewTasks }: { onViewTasks: (course
     }
   }
 
+  async function batchUpdateStatus(nextStatus: CourseStatus) {
+    if (selectedRowKeys.length === 0) return;
+    setBatchUpdating(true);
+    try {
+      await axios.put('/api/courses/batch-status', { courseIds: selectedRowKeys, status: nextStatus });
+      setSelectedRowKeys([]);
+      await loadCourses();
+      messageApi.success(`已更新 ${selectedRowKeys.length} 个课程状态`);
+    } catch {
+      messageApi.error('批量更新失败');
+    } finally {
+      setBatchUpdating(false);
+    }
+  }
+
   const visibleCourses = useMemo(
     () => courses.filter((course) => `${course.name} ${course.description}`.toLowerCase().includes(keyword.trim().toLowerCase())),
     [courses, keyword]
@@ -165,6 +182,12 @@ export default function CourseManagement({ onViewTasks }: { onViewTasks: (course
   const active = courses.filter((course) => course.status === 'ACTIVE').length;
   const closed = courses.filter((course) => course.status === 'CLOSED').length;
   const students = courses.reduce((sum, course) => sum + course.studentCount, 0);
+  const batchMenuItems = [
+    { key: 'DRAFT', label: '设为草稿', icon: <EditOutlined /> },
+    { key: 'ACTIVE', label: '设为进行中', icon: <UploadOutlined /> },
+    { key: 'CLOSED', label: '设为已结束', icon: <StopOutlined /> },
+    { key: 'ARCHIVED', label: '设为已归档', icon: <InboxOutlined /> },
+  ];
 
   return (
     <Space direction="vertical" size={12} className="content-stack">
@@ -174,12 +197,12 @@ export default function CourseManagement({ onViewTasks }: { onViewTasks: (course
         <Col xs={24} sm={8}><Card className="course-overview-card"><Statistic title="进行中课程" value={active} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} /></Card></Col>
         <Col xs={24} sm={8}><Card className="course-overview-card"><Statistic title="课程学生数" value={students} prefix={<TeamOutlined />} suffix={<Text type="secondary">已结束 {closed}</Text>} /></Card></Col>
       </Row>
-      <Card className="course-management-card" title="课程列表" extra={<Space><Button type="primary" onClick={() => void openCourseModal()}>新建课程</Button><Button icon={<CheckCircleOutlined />} onClick={() => void loadCourses()}>刷新</Button></Space>}>
+      <Card className="course-management-card" title={<Space><span>课程列表</span>{selectedRowKeys.length > 0 && <Tag color="blue">已选 {selectedRowKeys.length} 项</Tag>}</Space>} extra={<Space>{selectedRowKeys.length > 0 && <Dropdown menu={{ items: batchMenuItems, onClick: ({ key }) => void batchUpdateStatus(key as CourseStatus) }}><Button loading={batchUpdating}>批量设置状态</Button></Dropdown>}<Button type="primary" onClick={() => void openCourseModal()}>新建课程</Button><Button icon={<CheckCircleOutlined />} onClick={() => void loadCourses()}>刷新</Button></Space>}>
         <Space wrap size={12} className="course-toolbar">
           <Input prefix={<SearchOutlined />} placeholder="搜索课程名称或说明" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
           <Select<CourseStatus> allowClear placeholder="全部状态" value={status} onChange={setStatus} options={Object.entries(statusLabel).map(([value, label]) => ({ value, label }))} />
         </Space>
-        <Table<Course> className="course-table" size="small" rowKey="id" loading={loading} dataSource={visibleCourses} columns={columns} scroll={{ x: 900 }} pagination={{ pageSize: 8, showSizeChanger: false }} />
+        <Table<Course> className="course-table" size="small" rowKey="id" loading={loading} dataSource={visibleCourses} columns={columns} scroll={{ x: 900 }} pagination={{ pageSize: 8, showSizeChanger: false }} rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys as string[]) }} />
       </Card>
       <FormModal open={courseModalOpen} course={editingCourse} teachingStaff={teachingStaff} saving={saving} form={form} onCancel={() => setCourseModalOpen(false)} onSave={() => void saveCourse()} />
     </Space>
@@ -187,7 +210,7 @@ export default function CourseManagement({ onViewTasks }: { onViewTasks: (course
 }
 
 function FormModal({ open, course, teachingStaff, saving, form, onCancel, onSave }: { open: boolean; course?: Course; teachingStaff: TeacherOption[]; saving: boolean; form: FormInstance<CourseForm>; onCancel: () => void; onSave: () => void }) {
-  return <Modal title={course ? '编辑课程' : '新建课程'} open={open} confirmLoading={saving} onCancel={onCancel} onOk={onSave} destroyOnClose>
+  return <Modal title={course ? '编辑课程' : '新建课程'} open={open} confirmLoading={saving} onCancel={onCancel} onOk={onSave} destroyOnHidden>
     <Form form={form} layout="vertical">
       <Form.Item name="name" label="课程名称" rules={[{ required: true, message: '请输入课程名称' }]}><Input maxLength={100} /></Form.Item>
       <Form.Item name="description" label="课程说明" rules={[{ required: true, message: '请输入课程说明' }]}><Input.TextArea rows={3} maxLength={500} /></Form.Item>

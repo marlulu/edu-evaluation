@@ -15,6 +15,16 @@ infra/      Local MySQL, Redis, and MinIO Docker Compose setup
 
 前端调用 Spring Boot 后端。后端负责业务 API、持久化、文件元数据和编排。AI Worker 是一个独立的服务，用于文档解析、OCR/ASR、作品处理和 LLM 评估。
 
+## 快速部署
+
+```bash
+cd deploy
+cp .env.production .env && vim .env   # 配置密码和 API Key
+bash scripts/deploy.sh --build         # 一键构建并启动
+```
+
+详细步骤请查看 [一键部署指南](docs/QUICK_DEPLOY.md) | [完整部署文档](docs/DEPLOYMENT.md)
+
 ## Current Scope
 
 This scaffold intentionally includes only application shells, health endpoints, and local infrastructure wiring. Upload, authentication, grading, extraction, persistence workflows, and AI evaluation are deferred.

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import type { UserRole } from './api';
 
 const { Paragraph, Title } = Typography;
-export type LoginProfile = { id?: string; username: string; displayName: string; role: UserRole; studentId?: string | null };
 export type { UserRole } from './api';
 type RegisterValues = { role: 'TEACHER' | 'STUDENT'; username: string; password: string; displayName?: string; studentNumber?: string; initialPassword?: string };
 type LoginPageProps = {

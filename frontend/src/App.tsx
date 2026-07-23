@@ -7,14 +7,14 @@ import {
   LogoutOutlined,
   MenuOutlined,
   QuestionCircleOutlined,
-  SearchOutlined,
   SettingOutlined,
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons';
-import { Avatar, Button, Card, Drawer, Input, Menu, Modal, Space, Tag, Typography, message } from 'antd';
+import { Avatar, Badge, Button, Card, Drawer, Empty, Menu, Modal, Popover, Space, Tag, Typography, message } from 'antd';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import { LoginPage, type UserRole } from './features/auth/LoginPage';
 import {
   clearSession,
@@ -108,6 +108,8 @@ const navigationMeta: Record<NavigationGroup, string> = {
   system: '系统管理'
 };
 
+type SiteSettings = { footer_text?: string; icp_filing?: string };
+
 export default function App() {
   void profiles;
   const [apiMessage, contextHolder] = message.useMessage();
@@ -115,6 +117,7 @@ export default function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | undefined>();
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>({});
   const [activeModule, setActiveModule] = useState<ModuleKey>(() => {
     const saved = localStorage.getItem(MODULE_KEY);
     if (saved && ['dashboard', 'teaching', 'config', 'student', 'students'].includes(saved)) {
@@ -122,7 +125,13 @@ export default function App() {
     }
     return 'dashboard';
   });
-  const [activeGroup, setActiveGroup] = useState<NavigationGroup>('overview');
+  const [activeGroup, setActiveGroup] = useState<NavigationGroup>(() => {
+    const saved = localStorage.getItem(MODULE_KEY);
+    if (saved && ['dashboard', 'teaching', 'config', 'student', 'students'].includes(saved)) {
+      return moduleMeta[saved as ModuleKey].group;
+    }
+    return 'overview';
+  });
 
   useEffect(() => {
     const stored = getStoredSession();
@@ -133,6 +142,14 @@ export default function App() {
       .then((current) => setSessionUser({ ...current, accessToken: stored.accessToken }))
       .catch(() => clearSession());
   }, []);
+
+  const refreshSiteSettings = useCallback(() => {
+    axios.get<SiteSettings>('/api/site/settings')
+      .then((res) => setSiteSettings(res.data))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { refreshSiteSettings(); }, [refreshSiteSettings]);
 
   const visibleModules = useMemo(
     () => (sessionUser ? roleModules[sessionUser.role] : []),
@@ -258,6 +275,7 @@ export default function App() {
               user={sessionUser}
               visibleModules={visibleModules}
               onSelect={setActiveModule}
+              onSettingsSaved={refreshSiteSettings}
             />
           ) : (
             <PublicCanvas onLogin={() => setLoginOpen(true)} />
@@ -265,12 +283,21 @@ export default function App() {
         </div>
       </main>
 
+      <footer className="app-footer">
+        <div className="footer-content">
+          {siteSettings.footer_text && <span>{siteSettings.footer_text}</span>}
+          {siteSettings.icp_filing && (
+            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">{siteSettings.icp_filing}</a>
+          )}
+        </div>
+      </footer>
+
       <Modal
         open={loginOpen}
         footer={null}
         width={420}
         centered
-        destroyOnClose
+        destroyOnHidden
         onCancel={() => setLoginOpen(false)}
         className="login-modal"
       >
@@ -339,21 +366,10 @@ function GlobalHeader({
           </span>
         </div>
 
-        <Button type="text" className="channel-button">
-          全部频道
-        </Button>
-
-        <Input
-          className="global-search"
-          aria-label="全局搜索"
-          placeholder="搜索课程、任务或学生"
-          prefix={<SearchOutlined />}
-          readOnly
-        />
-
         <Space size={6} className="utility-actions">
           <Button type="text" shape="circle" icon={<QuestionCircleOutlined />} aria-label="帮助" />
-          <Button type="text" shape="circle" icon={<BellOutlined />} aria-label="通知" />
+          {authenticated && sessionUser && (sessionUser.role === 'TEACHER' || sessionUser.role === 'ASSISTANT' || sessionUser.role === 'ADMIN') && <AnalysisQueueBell />}
+          {authenticated && sessionUser && sessionUser.role === 'STUDENT' && <StudentNotificationBell />}
           {authenticated && sessionUser ? (
             <>
               <Tag color="blue" className="role-tag">
@@ -488,18 +504,20 @@ function AuthenticatedContent({
   activeModule,
   user,
   visibleModules,
-  onSelect
+  onSelect,
+  onSettingsSaved
 }: {
   activeModule: ModuleKey;
   user: SessionUser;
   visibleModules: ModuleKey[];
   onSelect: (module: ModuleKey) => void;
+  onSettingsSaved: () => void;
 }) {
   if (activeModule === 'teaching') {
     return <TeachingManagement />;
   }
   if (activeModule === 'config') {
-    return <SystemConfig />;
+    return <SystemConfig onSettingsSaved={onSettingsSaved} />;
   }
   if (activeModule === 'student') {
     return <StudentWorkspace studentName={user.displayName} />;
@@ -544,5 +562,166 @@ function Dashboard({
           ))}
       </div>
     </Space>
+  );
+}
+
+type AnalysisTask = {
+  taskId: string;
+  fileName: string;
+  status: string;
+  progress: number;
+};
+
+const RUNNING_STATUSES = new Set(['queued', 'extracting', 'running', 'transcribing']);
+
+function AnalysisQueueBell() {
+  const [tasks, setTasks] = useState<AnalysisTask[]>([]);
+  const [open, setOpen] = useState(false);
+
+  const loadTasks = useCallback(async () => {
+    try {
+      const response = await axios.get<{ tasks: AnalysisTask[] }>('/api/analysis/tasks');
+      setTasks(response.data.tasks ?? []);
+    } catch {
+      // silent
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadTasks();
+    const timer = window.setInterval(loadTasks, 15000);
+    return () => window.clearInterval(timer);
+  }, [loadTasks]);
+
+  const running = tasks.filter((t) => RUNNING_STATUSES.has(t.status));
+  const recentlyDone = tasks.filter((t) => t.status === 'completed' || t.status === 'failed');
+  const unreadCount = running.length;
+
+  const content = (
+    <div className="notification-popover">
+      <div className="notification-header">
+        <Text strong>分析队列</Text>
+        <Button type="link" size="small" onClick={() => void loadTasks()}>刷新</Button>
+      </div>
+      {tasks.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无分析任务" />}
+      {running.length > 0 && (
+        <div className="notification-section">
+          <Text type="secondary" className="notification-section-title">进行中（{running.length}）</Text>
+          {running.map((task) => (
+            <div key={task.taskId} className="notification-item">
+              <div className="notification-item-info">
+                <Text ellipsis className="notification-item-name">{task.fileName}</Text>
+                <Tag color="processing" className="notification-item-status">{task.status}</Tag>
+              </div>
+              <div className="notification-item-progress" style={{ width: `${Math.round(task.progress * 100)}%` }} />
+            </div>
+          ))}
+        </div>
+      )}
+      {recentlyDone.length > 0 && (
+        <div className="notification-section">
+          <Text type="secondary" className="notification-section-title">最近完成</Text>
+          {recentlyDone.slice(0, 5).map((task) => (
+            <div key={task.taskId} className="notification-item">
+              <Text ellipsis className="notification-item-name">{task.fileName}</Text>
+              <Tag color={task.status === 'completed' ? 'success' : 'error'}>{task.status === 'completed' ? '完成' : '失败'}</Tag>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <Popover content={content} trigger="click" open={open} onOpenChange={setOpen} placement="bottomRight" overlayClassName="notification-popover-overlay">
+      <Badge count={unreadCount} size="small" offset={[-2, 2]}>
+        <Button type="text" shape="circle" icon={<BellOutlined />} aria-label="分析队列" />
+      </Badge>
+    </Popover>
+  );
+}
+
+type Notification = {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  relatedId: string | null;
+  read: boolean;
+  createdAt: string;
+};
+
+function StudentNotificationBell() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [open, setOpen] = useState(false);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const [listRes, countRes] = await Promise.all([
+        axios.get<Notification[]>('/api/notifications'),
+        axios.get<{ count: number }>('/api/notifications/count')
+      ]);
+      setNotifications(listRes.data);
+      setUnreadCount(countRes.data.count);
+    } catch {
+      // silent
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNotifications();
+    const timer = window.setInterval(loadNotifications, 30000);
+    return () => window.clearInterval(timer);
+  }, [loadNotifications]);
+
+  async function markRead(id: string) {
+    try {
+      await axios.post(`/api/notifications/${id}/read`);
+      void loadNotifications();
+    } catch {
+      // silent
+    }
+  }
+
+  async function markAllRead() {
+    try {
+      await axios.post('/api/notifications/read-all');
+      void loadNotifications();
+    } catch {
+      // silent
+    }
+  }
+
+  const content = (
+    <div className="notification-popover">
+      <div className="notification-header">
+        <Text strong>消息通知</Text>
+        {unreadCount > 0 && <Button type="link" size="small" onClick={() => void markAllRead()}>全部已读</Button>}
+      </div>
+      {notifications.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无通知" />}
+      {notifications.length > 0 && (
+        <div className="notification-section">
+          {notifications.map((n) => (
+            <div key={n.id} className={`notification-item student-notification${n.read ? '' : ' unread'}`} onClick={() => { if (!n.read) void markRead(n.id); }}>
+              <div className="student-notification-content">
+                <Text strong className="student-notification-title">{n.title}</Text>
+                <Text type="secondary" className="student-notification-body">{n.content}</Text>
+                <Text type="secondary" className="student-notification-time">{new Date(n.createdAt).toLocaleString()}</Text>
+              </div>
+              {!n.read && <div className="student-notification-dot" />}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <Popover content={content} trigger="click" open={open} onOpenChange={setOpen} placement="bottomRight" overlayClassName="notification-popover-overlay">
+      <Badge count={unreadCount} size="small" offset={[-2, 2]}>
+        <Button type="text" shape="circle" icon={<BellOutlined />} aria-label="消息通知" />
+      </Badge>
+    </Popover>
   );
 }

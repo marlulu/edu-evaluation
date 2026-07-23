@@ -47,7 +47,8 @@ public class AnalysisReviewService {
 
     @Transactional
     public Map<String, Object> revise(String jobId, AnalysisReviewUpdateRequest request, String reviewerId) {
-        AnalysisReviewEntity review = require(jobId);
+        AnalysisReviewEntity review = repository.findByJobId(jobId)
+                .orElseGet(() -> new AnalysisReviewEntity(UUID.randomUUID().toString(), jobId, null));
         review.setReviewRuleScore(request.ruleScore());
         review.setReviewQualityScore(request.qualityReferenceScore());
         review.setReviewComment(trimToNull(request.comment()));
@@ -62,17 +63,13 @@ public class AnalysisReviewService {
 
     @Transactional
     public Map<String, Object> publish(String jobId, String reviewerId) {
-        AnalysisReviewEntity review = require(jobId);
+        AnalysisReviewEntity review = repository.findByJobId(jobId)
+                .orElseGet(() -> new AnalysisReviewEntity(UUID.randomUUID().toString(), jobId, null));
         review.setStatus(AnalysisReviewStatus.PUBLISHED.name());
         review.setReviewerId(reviewerId);
         review.setPublishedAt(LocalDateTime.now());
         review.setUpdatedAt(LocalDateTime.now());
         return toResponse(repository.save(review));
-    }
-
-    private AnalysisReviewEntity require(String jobId) {
-        return repository.findByJobId(jobId).orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "尚未生成可审核的分析报告"));
     }
 
     private Map<String, Object> toResponse(AnalysisReviewEntity review) {
