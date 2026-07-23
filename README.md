@@ -145,7 +145,7 @@ These endpoints currently return contract-first stub responses so the backend ca
 Start infrastructure:
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d
+docker compose up -d
 ```
 
 Run the backend:

@@ -26,9 +26,6 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class CourseService {
 
-    private static final String DEMO_TEACHER_ID = "current-teacher";
-    private static final String DEMO_TEACHER_NAME = "当前教师";
-
     private final CourseRepository courseRepository;
     private final CourseMemberRepository courseMemberRepository;
     private final CourseStaffRepository courseStaffRepository;

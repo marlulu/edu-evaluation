@@ -30,11 +30,8 @@ public class MinioConfig {
 
     @Bean
     public MinioClient minioClient() {
-        String endpoint = properties.getEndpoint();
-        boolean secure = endpoint.startsWith("https");
-
         return MinioClient.builder()
-                .endpoint(endpoint)
+                .endpoint(properties.getEndpoint())
                 .credentials(properties.getAccessKey(), properties.getSecretKey())
                 .build();
     }

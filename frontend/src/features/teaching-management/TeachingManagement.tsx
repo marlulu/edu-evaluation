@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import CourseManagement from './CourseManagement';
 import { saveNavState, loadNavState, clearNavState } from '../../navigation-state';
 import { FilePreviewModal, isPreviewable, getPreviewCategory } from '../shared/FilePreviewModal';
+import { RUNNING_STATUSES } from '../../constants';
 import mammoth from 'mammoth';
 
 const { Text, Title } = Typography;
@@ -356,8 +357,6 @@ function CourseSubmissions({ courseId, onOpenAnalysis }: { courseId: string; onO
     }))} />}
   </Card>;
 }
-
-const RUNNING_STATUSES = new Set(['queued', 'extracting', 'running', 'transcribing']);
 
 function AnalysisTriggerButton({ taskId, studentId, submitted, hasExistingAnalysis = false, onStarted }: {
   taskId: string;
@@ -1460,19 +1459,7 @@ function TaskDetail({ courseId, task, onOpenAnalysis }: {
   }
 
   async function downloadFile(url: string, fileName: string) {
-    try {
-      const response = await axios.get<Blob>(url, { responseType: 'blob' });
-      const objectUrl = URL.createObjectURL(response.data);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-    } catch {
-      messageApi.error('文件下载失败；较早导入的规则文件请重新导入后下载');
-    }
+    await downloadAuthenticatedFile(url, fileName, messageApi);
   }
 
   return <div className="course-tasks-page">

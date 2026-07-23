@@ -53,10 +53,6 @@
 .task-detail-long-text { width: 100%; max-width: none; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .task-detail-long-text-collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 8; }
 .task-detail-long-text .ant-btn-link { padding-inline: 6px; vertical-align: baseline; }
-.task-modal-attachments { display: grid; gap: 4px; margin-top: 10px; }
-.task-modal-attachment { display: flex; align-items: center; gap: 8px; min-height: 30px; }
-.task-modal-attachment > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-modal-uploaded-attachment { margin-top: 4px; }
 .course-detail-heading { display: flex; align-items: center; gap: 4px; padding: 0 0 12px; }
 .course-detail-heading-sep { width: 1px; height: 16px; background: #d9dfe6; margin: 0 4px; }
 .course-detail-heading-name { font-size: 15px; color: #2c3a4d; }
@@ -213,26 +209,6 @@ input {
 .brand-bars i:nth-child(4) {
   height: 18px;
   background: #f2705a;
-}
-
-.channel-button {
-  color: #4c5b70;
-  background: #f4f6f9;
-  border-radius: 18px;
-}
-
-.global-search {
-  width: 100%;
-  max-width: 380px;
-}
-
-.global-search.ant-input-affix-wrapper {
-  padding: 6px 14px;
-  color: #758398;
-  background: #f4f6f9;
-  border: 0;
-  border-radius: 18px;
-  box-shadow: none;
 }
 
 .utility-actions {
@@ -412,18 +388,6 @@ input {
   line-height: 1;
 }
 
-.student-task-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.task-deadline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .card-icon {
   display: inline-flex;
   align-items: center;
@@ -590,7 +554,6 @@ input {
     padding: 26px 20px;
   }
 }
-.student-task-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 .student-course-overview { margin-bottom: 18px; }
 .student-course-task-link { display: flex; align-items: center; justify-content: space-between; min-height: 42px; text-align: left; }
 .student-course-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }

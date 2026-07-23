@@ -222,11 +222,13 @@ curl -X POST http://localhost:8001/models/test \
   }'
 ```
 
-### 3. 测试视频分析
+### 3. 测试作品分析
 
 ```bash
-# 使用示例脚本
-python examples/video_analysis_example.py /path/to/video.mp4
+# 通过 API 测试
+curl -X POST http://localhost:8000/parse/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"file_url": "http://minio:9000/coursework-submissions/test.mp4"}'
 ```
 
 ## 配置优先级

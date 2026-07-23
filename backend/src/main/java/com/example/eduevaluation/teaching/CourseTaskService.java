@@ -24,11 +24,11 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -443,7 +443,7 @@ public class CourseTaskService {
         try {
             Map<String, Object> job = aiWorkerClient.analysisJob(jobId);
             status = job.get("status") == null ? null : String.valueOf(job.get("status"));
-        } catch (Exception ignored) {
+        } catch (RestClientException ignored) {
             // worker unavailable, return null status
         }
         return new AnalysisStartResponse(jobId, fileCount, status);
@@ -474,7 +474,7 @@ public class CourseTaskService {
                 task.put("status", job.getOrDefault("status", "unknown"));
                 task.put("progress", job.getOrDefault("progress", 0));
                 result.add(task);
-            } catch (Exception ignored) {
+            } catch (RestClientException ignored) {
                 // skip unavailable jobs
             }
         }

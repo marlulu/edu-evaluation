@@ -190,7 +190,7 @@ if (-not (Test-Path $workerPython)) {
 }
 
 Write-Host "Starting MySQL, Redis, and MinIO..."
-docker compose -f (Join-Path $ProjectRoot "infra\docker-compose.yml") up -d
+docker compose -f (Join-Path $ProjectRoot "docker-compose.yml") up -d
 if ($LASTEXITCODE -ne 0) {
     throw "Docker Compose failed to start the infrastructure services."
 }

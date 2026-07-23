@@ -30,6 +30,7 @@ import { SystemConfig } from './features/system-config/SystemConfig';
 import { StudentWorkspace } from './features/student-workspace/StudentWorkspace';
 import { StudentManagement } from './features/student-management/StudentManagement';
 import TeachingManagement from './features/teaching-management/TeachingManagement';
+import { RUNNING_STATUSES } from './constants';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -38,19 +39,6 @@ type ModuleKey = 'dashboard' | 'teaching' | 'config' | 'student' | 'students';
 type NavigationGroup = 'overview' | 'teaching' | 'system';
 
 const MODULE_KEY = 'edu-evaluation-active-module';
-
-const profiles: Array<Record<string, string>> = [
-  { username: 'admin', password: 'admin123', displayName: '系统管理员', role: 'ADMIN' },
-  { username: 'teacher01', password: 'teacher123', displayName: '课程教师', role: 'TEACHER' },
-  { username: 'assistant01', password: 'assistant123', displayName: '教师助理', role: 'ASSISTANT' },
-  {
-    username: 'student01',
-    password: 'student123',
-    displayName: '学生',
-    role: 'STUDENT',
-    studentId: 'demo-student-001'
-  }
-];
 
 const roleLabel: Record<UserRole, string> = {
   ADMIN: '管理员',
@@ -111,7 +99,6 @@ const navigationMeta: Record<NavigationGroup, string> = {
 type SiteSettings = { footer_text?: string; icp_filing?: string };
 
 export default function App() {
-  void profiles;
   const [apiMessage, contextHolder] = message.useMessage();
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -571,8 +558,6 @@ type AnalysisTask = {
   status: string;
   progress: number;
 };
-
-const RUNNING_STATUSES = new Set(['queued', 'extracting', 'running', 'transcribing']);
 
 function AnalysisQueueBell() {
   const [tasks, setTasks] = useState<AnalysisTask[]>([]);

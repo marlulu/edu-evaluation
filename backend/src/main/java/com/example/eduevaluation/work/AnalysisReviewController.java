@@ -4,6 +4,8 @@ import com.example.eduevaluation.auth.AppPrincipal;
 import com.example.eduevaluation.auth.UserRole;
 import com.example.eduevaluation.common.AiWorkerClient;
 import com.example.eduevaluation.common.StorageService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.example.eduevaluation.teaching.CourseTaskService;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +39,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @RestController
 @RequestMapping("/api/analysis")
 public class AnalysisReviewController {
+    private static final Logger log = LoggerFactory.getLogger(AnalysisReviewController.class);
+
     private final AiWorkerClient aiWorkerClient;
     private final AnalysisReviewService analysisReviewService;
     private final AnalysisReviewRepository reviewRepository;
@@ -187,7 +191,7 @@ public class AnalysisReviewController {
                     .contentType(MediaType.parseMediaType("application/zip"))
                     .body(baos.toByteArray());
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("导出分析报告失败", e);
             return ResponseEntity.internalServerError().build();
         }
     }

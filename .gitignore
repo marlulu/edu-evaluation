@@ -34,14 +34,12 @@ ai-worker/data/
 
 # Runtime logs
 *.log
+frontend/*.log
 img*.png
 ai-worker/test_ocr.png
 
 # Build/tool caches
 .vite/
-
-# Local infrastructure data
-infra/data/
 
 # Environment files
 .env

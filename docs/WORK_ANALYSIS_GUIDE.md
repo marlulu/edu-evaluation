@@ -36,8 +36,10 @@ npm run dev
 ```bash
 cd ai-worker
 
-# 分析本地视频
-python examples/video_analysis_example.py /path/to/video.mp4
+# 通过 API 测试分析
+curl -X POST http://localhost:8000/parse/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"file_url": "http://minio:9000/coursework-submissions/test.mp4"}'
 ```
 
 ### 3. 使用 API

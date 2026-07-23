@@ -138,7 +138,7 @@ AI Worker 当前提供 `/health` 健康接口。后续用于文件内容抽取�
 
 ### 3.4 基础设施
 
-本地基础设施由 `infra/docker-compose.yml` 管理：
+本地基础设施由 `docker-compose.yml` 管理：
 
 - MySQL `8.4`
 - Redis `7.4-alpine`
@@ -175,13 +175,13 @@ mvn "-Dmaven.repo.local=../.m2/repository" ...
 从项目根目录执行：
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d
+docker compose up -d
 ```
 
 停止基础设施：
 
 ```bash
-docker compose -f infra/docker-compose.yml down
+docker compose down
 ```
 
 如果需要删除本地数据，手动清理 `infra/data/`。该目录已被 `.gitignore` 忽略。
@@ -342,7 +342,7 @@ python -m compileall app
 - `frontend/Dockerfile`：构建静态资源，并通过 Nginx 提供页面。
 - `backend/Dockerfile`：构建 Spring Boot jar 并以 Java 17 运行。
 - `ai-worker/Dockerfile`：安装 Python 依赖并运行 Uvicorn。
-- `infra/docker-compose.app.yml`：编排前端、后端、AI Worker 和基础设施。
+- `deploy/docker-compose.prod.yml`：编排前端、后端、AI Worker 和基础设施。
 - `.env`：集中管理数据库、对象存储、队列和 AI 服务配置。
 
 推荐流量路径：
