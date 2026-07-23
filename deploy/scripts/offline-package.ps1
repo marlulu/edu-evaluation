@@ -215,7 +215,8 @@ load_images() {
     for image_file in *.tar.gz; do
         if [ -f "$image_file" ]; then
             print_info "加载镜像: $image_file"
-            gunzip -c "$image_file" | docker load
+            # -O 输出到 stdout，解决 tar.gz 内嵌套 .tar 的问题
+            tar -xzf "$image_file" -O | docker load
         fi
     done
 
