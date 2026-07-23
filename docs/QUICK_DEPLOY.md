@@ -56,7 +56,6 @@ MINIO_ROOT_USER=minio
 MINIO_BUCKET=coursework-submissions
 MODEL_PROVIDER_DRIVER=openai-compatible
 MODEL_TIMEOUT_SECONDS=180
-APP_PORT=80
 
 # ===== 可选（按需配置模型） =====
 TEXT_MODEL_NAME=gpt-4o
@@ -98,17 +97,8 @@ docker exec edu-ai-worker curl -s http://localhost:8000/health
 ```
 
 **访问地址：**
-- 前端界面：`https://marwind.top`
-- MinIO 控制台：`http://<服务器IP>:9001`（默认账号 `minio` / `minio_password`）
-
-### 初始化 SSL 证书（首次部署）
-
-```bash
-# 确保域名 marwind.top 已解析到服务器 IP
-bash scripts/init-ssl.sh admin@marwind.top
-```
-
-证书自动续期已通过 certbot 容器配置，无需手动维护。
+- 前端界面：`http://marwind.top`
+- MinIO 控制台：`http://<服务器IP>:19001`（默认账号 `minio` / `minio_password`）
 
 **默认登录账号：**
 - 管理员：`admin` / `admin123`
@@ -285,12 +275,12 @@ sudo systemctl restart docker
 
 | 服务 | 容器内端口 | 宿主机端口 | 对外暴露 |
 |------|-----------|-----------|----------|
-| Nginx (前端) | 80 | `${APP_PORT:-80}` | ✅ |
+| Nginx (前端) | 80 | 80 | ✅ |
 | Backend | 8080 | - | ❌ |
 | AI Worker | 8000 | - | ❌ |
 | MySQL | 3306 | 127.0.0.1:3307 | ❌ |
 | Redis | 6379 | 127.0.0.1:6379 | ❌ |
-| MinIO API | 9000 | 127.0.0.1:9000 | ❌ |
-| MinIO Console | 9001 | 127.0.0.1:9001 | 可选 |
+| MinIO API | 9000 | 127.0.0.1:19000 | ❌ |
+| MinIO Console | 9001 | 127.0.0.1:19001 | 可选 |
 
-> 生产环境所有内部服务仅绑定 `127.0.0.1`，仅 Nginx 对外。防火墙只需放行 80/443。
+> 生产环境所有内部服务仅绑定 `127.0.0.1`，仅 Nginx 对外。防火墙只需放行 80。
