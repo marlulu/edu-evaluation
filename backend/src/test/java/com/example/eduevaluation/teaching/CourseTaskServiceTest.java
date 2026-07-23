@@ -54,7 +54,7 @@ class CourseTaskServiceTest {
         when(tasks.findAll()).thenReturn(List.of(visibleTask, expiredTask));
         when(members.existsByCourseIdAndStudentId("course-1", "student-1")).thenReturn(true);
         when(courses.findById("course-1")).thenReturn(Optional.of(activeCourse));
-        when(submissions.findByTaskIdAndStudentId("task-1", "student-1")).thenReturn(Optional.empty());
+        when(submissions.findTopByTaskIdAndStudentIdOrderBySubmittedAtDesc("task-1", "student-1")).thenReturn(Optional.empty());
 
         List<CourseTaskService.StudentTaskResponse> visible = service.myTasks(student);
 
