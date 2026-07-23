@@ -74,6 +74,8 @@ management:
   health:
     redis:
       enabled: true
+    rabbit:
+      enabled: false
 
 # 应用配置
 app:
