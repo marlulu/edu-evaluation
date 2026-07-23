@@ -110,7 +110,16 @@ docker exec edu-ai-worker curl -s http://localhost:8000/health
 
 ### 在有网机器上打包
 
+> ⚠️ **重要**：脚本必须在 `deploy` 目录下运行！
+
 ```bash
+# 1. 进入项目目录
+cd edu-evaluation
+
+# 2. 进入 deploy 目录（必须！）
+cd deploy
+
+# 3. 运行打包脚本
 # Linux / macOS
 bash scripts/offline-package.sh
 
@@ -118,20 +127,34 @@ bash scripts/offline-package.sh
 .\scripts\offline-package.ps1
 ```
 
-生成 `edu-evaluation-offline.tar.gz`，包含所有 Docker 镜像和部署文件。
+**Windows PowerShell 完整示例：**
+```powershell
+cd E:\Codex\edu-evaluation\deploy
+.\scripts\offline-package.ps1 -All
+```
+
+**脚本参数：**
+| 参数 | 说明 |
+|------|------|
+| `-All` | 打包所有内容（默认） |
+| `-Images` | 仅打包 Docker 镜像 |
+| `-Code` | 仅打包项目代码 |
+| `-Help` | 显示帮助 |
+
+生成 `offline-package/edu-evaluation-offline-<timestamp>/` 目录，包含所有 Docker 镜像和部署文件。
 
 ### 在目标机器上部署
 
 ```bash
 # 传输到目标机器后解压
-tar xzf edu-evaluation-offline.tar.gz
-cd edu-evaluation-offline
+tar xzf edu-evaluation-offline-*.tar.gz
+cd edu-evaluation-offline-*
 
 # 编辑配置
 vim .env
 
 # 一键部署
-bash deploy-offline.sh
+bash deploy-offline.sh --all
 ```
 
 ---
