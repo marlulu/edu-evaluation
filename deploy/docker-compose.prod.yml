@@ -86,6 +86,9 @@ services:
   # ---------- 应用服务 ----------
 
   ai-worker:
+    build:
+      context: ../ai-worker
+      dockerfile: Dockerfile
     image: edu-ai-worker:latest
     container_name: edu-ai-worker
     volumes:
@@ -129,6 +132,9 @@ services:
         max-file: "3"
 
   backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
     image: edu-backend:latest
     container_name: edu-backend
     volumes:
@@ -183,6 +189,9 @@ services:
         max-file: "3"
 
   frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
     image: edu-frontend:latest
     container_name: edu-nginx
     ports:
