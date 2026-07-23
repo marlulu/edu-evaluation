@@ -72,9 +72,10 @@ function Package-Images {
         Write-Info "保存镜像: $image -> $filename"
         docker save -o $filename $image
 
-        # 压缩
+        # 压缩（Windows 10+ 自带 tar）
         Write-Info "压缩: $filename"
-        gzip $filename
+        tar -czf "$filename.gz" $filename
+        Remove-Item $filename
     }
 
     # 生成镜像清单
